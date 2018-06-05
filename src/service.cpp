@@ -1,9 +1,58 @@
+#include <csignal>
 #include <deque>
 #include <exception>
-
-#include <csignal>
+#include <functional>
 
 #include "service.h"
+
+using namespace std::placeholders;
+
+TConnection::TConnection(TService* parent, TServiceContextPtr context, TSocketHandlePtr client, TSocketHandlePtr backend)
+    : Parent_(parent)
+    , Context_(context)
+    , Client_(std::move(client))
+    , Backend_(std::move(backend))
+    , ClientBuffer_(4096)
+    , BackendBuffer_(4096)
+{
+    Client_->Read(&ClientBuffer_, std::bind(&TConnection::ReadFromClient, this, _1, _2, _3));
+    Backend_->Read(&BackendBuffer_, std::bind(&TConnection::ReadFromBackend, this, _1, _2, _3));
+}
+
+void TConnection::ReadFromClient(TSocketHandlePtr client, size_t readBytes, bool eof) {
+    if (eof) {
+        Client_->Close();
+        Backend_->Close();
+        return;
+    }
+
+    client->PauseRead();
+    Backend_->PauseRead();
+
+    Backend_->Write(ClientBuffer_.CurrentMemoryRegion(), [this](TSocketHandlePtr backend) {
+        ClientBuffer_.Reset();
+        Client_->RestartRead();
+        Backend_->RestartRead();
+    });
+}
+
+void TConnection::ReadFromBackend(TSocketHandlePtr backend, size_t readBytes, bool eof) {
+    if (eof) {
+        Backend_->Close();
+        Client_->Close();
+        return;
+    }
+
+    backend->PauseRead();
+    Client_->PauseRead();
+
+    Client_->Write(BackendBuffer_.CurrentMemoryRegion(), [this](TSocketHandlePtr client) {
+        BackendBuffer_.Reset();
+        Backend_->RestartRead();
+        Client_->RestartRead();
+    });
+}
+
 
 TService::TService(TEventLoop* loop, const TServiceContext& serviceContext)
     : Loop_(loop)
@@ -19,25 +68,20 @@ TService::TService(TEventLoop* loop, const TServiceContext& serviceContext)
     Listener_ = Loop_->MakeTcp();
     std::vector<TSocketAddress> addrs = GetAddrInfo(Context_->Config.Host, Context_->Config.Port, true, "tcp");
     Listener_->Bind(addrs[0]);
-    Listener_->Listen([this, context](std::shared_ptr<TSocketHandle> listener, std::shared_ptr<TSocketHandle> accepted) {
-        context->Logger->info("connected client {}:{}", accepted->Address().Host(), accepted->Address().Port());
 
-        std::shared_ptr<TSocketBuffer> buffer(new TSocketBuffer(4096));
-        int* cnt = new int(0);
-        accepted->Read([this, context, buffer, cnt](std::shared_ptr<TSocketHandle> client, size_t readBytes, bool eof) {
-            context->Logger->info("read {} bytes, eof = {}", readBytes, eof);
+    addrs = GetAddrInfo(Context_->Config.BackendHost, Context_->Config.BackendPort, false, "tcp");
+    TSocketAddress backendAddr = addrs[0];
+    Listener_->Listen([this, context, backendAddr](TSocketHandlePtr listener, TSocketHandlePtr client) {
+        // context->Logger->info("connected client {}:{}", client->Address().Host(), client->Address().Port());
 
-            *cnt += readBytes;
-            if (eof) {
-                client->Close();
-            } else if (*cnt > 25) {
-                context->Logger->info("cnt = {}", *cnt);
-                client->Write([context, buffer](TSocketHandlePtr client) {
-                    context->Logger->info("write complete");
-                    buffer->Unwind();
-                }, buffer->CurrentMemoryRegion());
+        TSocketHandlePtr backend = Loop_->MakeTcp();
+        backend->Connect(backendAddr, [this, client, context](TSocketHandlePtr backend) {
+            std::unique_ptr<TConnection> connection(new TConnection(this, std::move(context), std::move(client), std::move(backend)));
+            if (Connections_.size() <= connection->Id()) {
+                Connections_.resize(connection->Id() + 1);
             }
-        }, buffer.get());
+            Connections_[connection->Id()] = std::move(connection);
+        });
     });
 }
 

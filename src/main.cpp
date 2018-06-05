@@ -25,8 +25,8 @@ int main(int argc, char** argv) {
     config.Port = pyConfig["port"].cast<std::string>();
     config.HandlerFile = pyConfig["handler_file"].cast<std::string>();
 
-    config.BackendHost = "localhost";
-    config.BackendPort = "8000";
+    config.BackendHost = pyConfig["backend_host"].cast<std::string>();
+    config.BackendPort = pyConfig["backend_port"].cast<std::string>();
 
     TServiceContext context;
     context.Config = config;

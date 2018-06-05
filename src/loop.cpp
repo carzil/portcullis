@@ -82,7 +82,7 @@ std::shared_ptr<TSocketHandle> TEventLoop::MakeTcp() {
 void TEventLoop::Listen(std::shared_ptr<TSocketHandle> handle, int backlog) {
     if (::listen(handle->Fd(), backlog) == -1) {
         char error[4096];
-        throw TException() << "listen failed: " << strerror_r(errno, error, sizeof(error));;
+        throw TException() << "listen failed: " << strerror_r(errno, error, sizeof(error));
     }
     EpollAddOrModify(std::move(handle), handle->EpollEvents | EPOLLIN);
 }
@@ -91,15 +91,27 @@ void TEventLoop::StartRead(std::shared_ptr<TSocketHandle> handle) {
     EpollAddOrModify(std::move(handle), handle->EpollEvents | EPOLLIN);
 }
 
+void TEventLoop::StopRead(std::shared_ptr<TSocketHandle> handle) {
+    EpollAddOrModify(std::move(handle), handle->EpollEvents & ~EPOLLIN);
+}
+
 void TEventLoop::StartWrite(std::shared_ptr<TSocketHandle> handle) {
     EpollAddOrModify(std::move(handle), handle->EpollEvents | EPOLLOUT);
 }
 
-void TEventLoop::Close(TSocketHandle* handle) {
-    Handles_[handle->Fd()] = nullptr;
+void TEventLoop::Connect(std::shared_ptr<TSocketHandle> handle) {
+    if (::connect(handle->Fd(), handle->ConnectEndpoint.AddressAs<sockaddr>(), handle->ConnectEndpoint.Length()) == -1) {
+        char error[4096];
+        throw TException() << "connect failed: " << strerror_r(errno, error, sizeof(error));
+    }
+    EpollAddOrModify(std::move(handle), handle->EpollEvents | EPOLLOUT);
 }
 
-std::shared_ptr<TSocketHandle> TEventLoop::DoAccept(TSocketHandle* handle) {
+void TEventLoop::Close(int fd) {
+    Handles_[fd] = nullptr;
+}
+
+void TEventLoop::DoAccept(TSocketHandle* handle) {
     sockaddr_storage addr;
     socklen_t len = sizeof(sockaddr_storage);
 
@@ -112,7 +124,7 @@ std::shared_ptr<TSocketHandle> TEventLoop::DoAccept(TSocketHandle* handle) {
 
     std::shared_ptr<TSocketHandle> accepted(new TSocketHandle(this, fd));
     accepted->SetAddress(TSocketAddress(reinterpret_cast<const sockaddr*>(&addr), len));
-    return accepted;
+    handle->AcceptHandler(handle->shared_from_this(), std::move(accepted));
 }
 
 void TEventLoop::DoRead(TSocketHandle* handle) {
@@ -131,11 +143,7 @@ void TEventLoop::DoRead(TSocketHandle* handle) {
         handle->ReadDestination->Advance(ret);
     }
 
-    bool eof = ret == 0;
-    handle->ReadHandler(handle->shared_from_this(), ret, eof);
-    if (eof) {
-        EpollModify(handle, handle->EpollEvents & ~EPOLLIN);
-    }
+    handle->ReadHandler(handle->shared_from_this(), ret, ret == 0);
 }
 
 void TEventLoop::DoWrite(TSocketHandle* handle) {
@@ -160,6 +168,12 @@ void TEventLoop::DoWrite(TSocketHandle* handle) {
 
         handle->WriteChain.Advance(res);
     }
+}
+
+void TEventLoop::DoConnect(TSocketHandle* handle) {
+    handle->ConnectHandler(handle->shared_from_this());
+    handle->ConnectHandler = nullptr;
+    EpollAddOrModify(handle->shared_from_this(), handle->EpollEvents & ~EPOLLOUT);
 }
 
 void TEventLoop::DoSignal() {
@@ -205,16 +219,19 @@ void TEventLoop::Do() {
 
             if (fd_events & EPOLLIN) {
                 if (handle->AcceptHandler) {
-                    std::shared_ptr<TSocketHandle> connected = DoAccept(handle.get());
-                    handle->AcceptHandler(std::move(handle), std::move(connected));
+                    DoAccept(handle.get());
                 } else if (handle->ReadHandler) {
                     DoRead(handle.get());
                 }
             }
 
             if (fd_events & EPOLLOUT) {
-                ASSERT(handle->WriteHandler);
-                DoWrite(handle.get());
+                if (handle->ConnectHandler) {
+                    DoConnect(handle.get());
+                } else {
+                    ASSERT(handle->WriteHandler);
+                    DoWrite(handle.get());
+                }
             }
 
             if (fd_events & EPOLLERR) {

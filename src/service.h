@@ -28,13 +28,42 @@ struct TServiceContext {
     TServiceConfig Config;
 };
 
+using TServiceContextPtr = std::shared_ptr<TServiceContext>;
+
+class TService;
+
+class TConnection {
+public:
+    TConnection(TService* parent, TServiceContextPtr context, TSocketHandlePtr client, TSocketHandlePtr backend);
+
+    void ReadFromClient(TSocketHandlePtr client, size_t readBytes, bool eof);
+    void ReadFromBackend(TSocketHandlePtr backend, size_t readBytes, bool eof);
+
+    int Id() const {
+        return Client_->Fd();
+    }
+
+private:
+    TService* Parent_ = nullptr;
+    TServiceContextPtr Context_;
+    TSocketHandlePtr Client_;
+    TSocketHandlePtr Backend_;
+    TSocketBuffer ClientBuffer_;
+    TSocketBuffer BackendBuffer_;
+};
+
 class TService {
 public:
     TService(TEventLoop* loop, const TServiceContext& context);
     void Start();
 
+    void EndConnection(TConnection* connection) {
+        Connections_[connection->Id()] = nullptr;
+    }
+
 private:
     std::shared_ptr<TServiceContext> Context_;
     TEventLoop* Loop_ = nullptr;
     std::shared_ptr<TSocketHandle> Listener_;
+    std::vector<std::unique_ptr<TConnection>> Connections_;
 };

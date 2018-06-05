@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.9)
 
 include(ExternalProject)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -ldl -Wno-pragmas -Wno-deprecated-declarations")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wno-pragmas -Wno-deprecated-declarations")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0 -fsanitize=address -D_DEBUG_")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
 
@@ -15,7 +15,9 @@ set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
 #     INSTALL_COMMAND ""
 # )
 
-set(SPDLOG_BUILD_TESTING OFF)
+# prevent building tests by default
+set(BUILD_TESTING OFF CACHE BOOL "Build tests")
+
 add_subdirectory(libs/pybind11)
 add_subdirectory(libs/spdlog)
 

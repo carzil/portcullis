@@ -70,7 +70,7 @@ public:
 
     TSocketBuffer(size_t capacity)
         : Capacity_(capacity)
-        , Data_(std::make_unique<uint8_t[]>(capacity))
+        , Data_(new uint8_t[capacity])
     {
     }
 
@@ -103,7 +103,7 @@ public:
         return static_cast<const T>(Data_.get());
     }
 
-    void Unwind() {
+    void Reset() {
         Size_ = 0;
     }
 

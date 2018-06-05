@@ -25,11 +25,11 @@ TSocketAddress::TSocketAddress(const sockaddr* sa, size_t len)
     const sockaddr_in6* in6 = reinterpret_cast<const sockaddr_in6*>(sa);
     switch (sa->sa_family) {
         case AF_INET:
-            Port_ = ::ntohs(in->sin_port);
+            Port_ = ntohs(in->sin_port);
             Host_ = ::inet_ntop(sa->sa_family, &in->sin_addr, reinterpret_cast<char*>(&hostStr), sizeof(hostStr));
             break;
         case AF_INET6:
-            Port_ = ::ntohs(in6->sin6_port);
+            Port_ = ntohs(in6->sin6_port);
             Host_ = ::inet_ntop(sa->sa_family, &in6->sin6_addr, reinterpret_cast<char*>(&hostStr), sizeof(hostStr));
             break;
         default:
@@ -41,10 +41,7 @@ TSocketAddress::TSocketAddress(const sockaddr* sa, size_t len)
 
 
 TSocketHandle::~TSocketHandle() {
-    if (Fd_ != -1) {
-        ::close(Fd_);
-        Loop_->Close(this);
-    }
+    Close();
 }
 
 void TSocketHandle::Listen(TAcceptHandler handler, int backlog) {
@@ -52,16 +49,35 @@ void TSocketHandle::Listen(TAcceptHandler handler, int backlog) {
     Loop_->Listen(shared_from_this(), backlog);
 }
 
-void TSocketHandle::Read(TReadHandler handler, TSocketBuffer* readDest) {
+void TSocketHandle::Read(TSocketBuffer* readDest, TReadHandler handler) {
     ReadDestination = readDest;
     ReadHandler = std::move(handler);
     Loop_->StartRead(shared_from_this());
 }
 
-void TSocketHandle::Write(TWriteHandler handler, TMemoryRegionChain chain) {
+void TSocketHandle::PauseRead() {
+    Loop_->StopRead(shared_from_this());
+}
+
+void TSocketHandle::RestartRead() {
+    Loop_->StartRead(shared_from_this());
+}
+
+void TSocketHandle::Write(TMemoryRegionChain chain, TWriteHandler handler) {
     WriteChain = std::move(chain);
     WriteHandler = std::move(handler);
     Loop_->StartWrite(shared_from_this());
+}
+
+void TSocketHandle::Connect(TSocketAddress endpoint, TConnectHandler handler) {
+    ConnectHandler = std::move(handler);
+    ConnectEndpoint = std::move(endpoint);
+    Loop_->Connect(shared_from_this());
+}
+
+void TSocketHandle::StopRead() {
+    ReadHandler = nullptr;
+    Loop_->StopRead(shared_from_this());
 }
 
 void TSocketHandle::Close() {
@@ -70,7 +86,13 @@ void TSocketHandle::Close() {
     AcceptHandler = nullptr;
     ConnectHandler = nullptr;
     ErrorHandler = nullptr;
-    Loop_->Close(this);
+
+    if (Fd_ != -1) {
+        int fd = Fd_;
+        ::close(fd);
+        Fd_ = -1;
+        Loop_->Close(fd);
+    }
 }
 
 void TSocketHandle::Bind(const TSocketAddress& addr) {
