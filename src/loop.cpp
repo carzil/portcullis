@@ -32,7 +32,7 @@ int TEventLoop::EpollOp(int op, int fd, int events) {
     return ::epoll_ctl(Fd_, op, fd, &ctl_event);
 }
 
-void TEventLoop::EpollAddOrModify(std::shared_ptr<TSocketHandle> handle, int events) {
+void TEventLoop::EpollAddOrModify(TSocketHandle* handle, int events) {
     int op = EPOLL_CTL_MOD;
     if (!handle->Registered) {
         op = EPOLL_CTL_ADD;
@@ -42,7 +42,7 @@ void TEventLoop::EpollAddOrModify(std::shared_ptr<TSocketHandle> handle, int eve
             Handles_.resize(handle->Fd() + 1);
         }
 
-        Handles_[handle->Fd()] = handle;
+        Handles_[handle->Fd()] = handle->shared_from_this();
     }
 
     int res = EpollOp(op, handle->Fd(), events);
@@ -68,7 +68,7 @@ void TEventLoop::EpollModify(TSocketHandle* handle, int events) {
     handle->EpollEvents = events;
 }
 
-std::shared_ptr<TSocketHandle> TEventLoop::MakeTcp() {
+TSocketHandlePtr TEventLoop::MakeTcp() {
     int fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
     if (fd < 0) {
@@ -79,32 +79,32 @@ std::shared_ptr<TSocketHandle> TEventLoop::MakeTcp() {
     return std::make_shared<TSocketHandle>(this, fd);
 }
 
-void TEventLoop::Listen(std::shared_ptr<TSocketHandle> handle, int backlog) {
+void TEventLoop::Listen(TSocketHandle* handle, int backlog) {
     if (::listen(handle->Fd(), backlog) == -1) {
         char error[4096];
         throw TException() << "listen failed: " << strerror_r(errno, error, sizeof(error));
     }
-    EpollAddOrModify(std::move(handle), handle->EpollEvents | EPOLLIN);
+    EpollAddOrModify(handle, handle->EpollEvents | EPOLLIN);
 }
 
-void TEventLoop::StartRead(std::shared_ptr<TSocketHandle> handle) {
-    EpollAddOrModify(std::move(handle), handle->EpollEvents | EPOLLIN);
+void TEventLoop::StartRead(TSocketHandle* handle) {
+    EpollAddOrModify(handle, handle->EpollEvents | EPOLLIN);
 }
 
-void TEventLoop::StopRead(std::shared_ptr<TSocketHandle> handle) {
-    EpollAddOrModify(std::move(handle), handle->EpollEvents & ~EPOLLIN);
+void TEventLoop::StopRead(TSocketHandle* handle) {
+    EpollAddOrModify(handle, handle->EpollEvents & ~EPOLLIN);
 }
 
-void TEventLoop::StartWrite(std::shared_ptr<TSocketHandle> handle) {
-    EpollAddOrModify(std::move(handle), handle->EpollEvents | EPOLLOUT);
+void TEventLoop::StartWrite(TSocketHandle* handle) {
+    EpollAddOrModify(handle, handle->EpollEvents | EPOLLOUT);
 }
 
-void TEventLoop::Connect(std::shared_ptr<TSocketHandle> handle) {
+void TEventLoop::Connect(TSocketHandle* handle) {
     if (::connect(handle->Fd(), handle->ConnectEndpoint.AddressAs<sockaddr>(), handle->ConnectEndpoint.Length()) == -1) {
         char error[4096];
         throw TException() << "connect failed: " << strerror_r(errno, error, sizeof(error));
     }
-    EpollAddOrModify(std::move(handle), handle->EpollEvents | EPOLLOUT);
+    EpollAddOrModify(handle, handle->EpollEvents | EPOLLOUT);
 }
 
 void TEventLoop::Close(int fd) {
@@ -122,7 +122,7 @@ void TEventLoop::DoAccept(TSocketHandle* handle) {
         throw TException() << "error while accepting from fd=" << handle->Fd() << ": " << strerror_r(errno, error, sizeof(error));
     }
 
-    std::shared_ptr<TSocketHandle> accepted(new TSocketHandle(this, fd));
+    TSocketHandlePtr accepted(new TSocketHandle(this, fd));
     accepted->SetAddress(TSocketAddress(reinterpret_cast<const sockaddr*>(&addr), len));
     handle->AcceptHandler(handle->shared_from_this(), std::move(accepted));
 }
@@ -173,7 +173,7 @@ void TEventLoop::DoWrite(TSocketHandle* handle) {
 void TEventLoop::DoConnect(TSocketHandle* handle) {
     handle->ConnectHandler(handle->shared_from_this());
     handle->ConnectHandler = nullptr;
-    EpollAddOrModify(handle->shared_from_this(), handle->EpollEvents & ~EPOLLOUT);
+    EpollAddOrModify(handle, handle->EpollEvents & ~EPOLLOUT);
 }
 
 void TEventLoop::DoSignal() {
@@ -215,7 +215,7 @@ void TEventLoop::Do() {
         if (fd == SignalFd_) {
             DoSignal();
         } else {
-            std::shared_ptr<TSocketHandle> handle = Handles_[fd];
+            TSocketHandlePtr handle = Handles_[fd];
 
             if (fd_events & EPOLLIN) {
                 if (handle->AcceptHandler) {

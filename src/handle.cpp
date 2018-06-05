@@ -46,38 +46,38 @@ TSocketHandle::~TSocketHandle() {
 
 void TSocketHandle::Listen(TAcceptHandler handler, int backlog) {
     AcceptHandler = std::move(handler);
-    Loop_->Listen(shared_from_this(), backlog);
+    Loop_->Listen(this, backlog);
 }
 
 void TSocketHandle::Read(TSocketBuffer* readDest, TReadHandler handler) {
     ReadDestination = readDest;
     ReadHandler = std::move(handler);
-    Loop_->StartRead(shared_from_this());
+    Loop_->StartRead(this);
 }
 
 void TSocketHandle::PauseRead() {
-    Loop_->StopRead(shared_from_this());
+    Loop_->StopRead(this);
 }
 
 void TSocketHandle::RestartRead() {
-    Loop_->StartRead(shared_from_this());
+    Loop_->StartRead(this);
 }
 
 void TSocketHandle::Write(TMemoryRegionChain chain, TWriteHandler handler) {
     WriteChain = std::move(chain);
     WriteHandler = std::move(handler);
-    Loop_->StartWrite(shared_from_this());
+    Loop_->StartWrite(this);
 }
 
 void TSocketHandle::Connect(TSocketAddress endpoint, TConnectHandler handler) {
     ConnectHandler = std::move(handler);
     ConnectEndpoint = std::move(endpoint);
-    Loop_->Connect(shared_from_this());
+    Loop_->Connect(this);
 }
 
 void TSocketHandle::StopRead() {
     ReadHandler = nullptr;
-    Loop_->StopRead(shared_from_this());
+    Loop_->StopRead(this);
 }
 
 void TSocketHandle::Close() {

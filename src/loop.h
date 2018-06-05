@@ -16,15 +16,15 @@ public:
     TEventLoop();
     ~TEventLoop();
 
-    std::shared_ptr<TSocketHandle> MakeTcp();
+    TSocketHandlePtr MakeTcp();
 
-    void Listen(std::shared_ptr<TSocketHandle> handle, int backlog);
+    void Listen(TSocketHandle* handle, int backlog);
 
-    void StartRead(std::shared_ptr<TSocketHandle> handle);
-    void StopRead(std::shared_ptr<TSocketHandle> handle);
+    void StartRead(TSocketHandle* handle);
+    void StopRead(TSocketHandle* handle);
 
-    void StartWrite(std::shared_ptr<TSocketHandle> handle);
-    void Connect(std::shared_ptr<TSocketHandle> handle);
+    void StartWrite(TSocketHandle* handle);
+    void Connect(TSocketHandle* handle);
     void Close(int fd);
 
     void Signal(int sig, TSignalHandler handler);
@@ -34,7 +34,7 @@ public:
 
 private:
     int EpollOp(int op, int fd, int events);
-    void EpollAddOrModify(std::shared_ptr<TSocketHandle> handle, int events);
+    void EpollAddOrModify(TSocketHandle* handle, int events);
     void EpollModify(TSocketHandle* handle, int events);
     void Do();
     void DoAccept(TSocketHandle* handle);
@@ -44,7 +44,7 @@ private:
     void DoSignal();
 
     int Fd_ = -1;
-    std::vector<std::shared_ptr<TSocketHandle>> Handles_;
+    std::vector<TSocketHandlePtr> Handles_;
     std::atomic<bool> Running_;
 
     int SignalFd_ = -1;
