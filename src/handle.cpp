@@ -58,6 +58,12 @@ void TSocketHandle::Read(TReadHandler handler, TSocketBuffer* readDest) {
     Loop_->StartRead(shared_from_this());
 }
 
+void TSocketHandle::Write(TWriteHandler handler, TMemoryRegionChain chain) {
+    WriteChain = std::move(chain);
+    WriteHandler = std::move(handler);
+    Loop_->StartWrite(shared_from_this());
+}
+
 void TSocketHandle::Close() {
     ReadHandler = nullptr;
     WriteHandler = nullptr;

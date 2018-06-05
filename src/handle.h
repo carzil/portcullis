@@ -65,6 +65,12 @@ public:
     void Listen(TAcceptHandler handler, int backlog = 1);
     void Bind(const TSocketAddress& addr);
     void Read(TReadHandler handler, TSocketBuffer* destination);
+
+    void Write(TWriteHandler handler, TMemoryRegionChain chain);
+    void Write(TWriteHandler handler, TMemoryRegion region) {
+        Write(std::move(handler), TMemoryRegionChain({ region }));
+    }
+
     void Close();
 
     ~TSocketHandle();
@@ -83,6 +89,7 @@ public:
     int EpollEvents = 0;
 
     TSocketBuffer* ReadDestination = nullptr;
+    TMemoryRegionChain WriteChain;
 
     int Fd() {
         return Fd_;

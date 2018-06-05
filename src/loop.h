@@ -21,6 +21,7 @@ public:
     void Listen(std::shared_ptr<TSocketHandle> handle, int backlog);
     void StartRead(std::shared_ptr<TSocketHandle> handle);
     void StopRead(std::shared_ptr<TSocketHandle> handle);
+    void StartWrite(std::shared_ptr<TSocketHandle> handle);
     void Close(TSocketHandle* handle);
 
     void Signal(int sig, TSignalHandler handler);
@@ -35,6 +36,7 @@ private:
     void Do();
     std::shared_ptr<TSocketHandle> DoAccept(TSocketHandle* handle);
     void DoRead(TSocketHandle* handle);
+    void DoWrite(TSocketHandle* handle);
     void DoSignal();
 
     int Fd_ = -1;

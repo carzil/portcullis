@@ -23,11 +23,19 @@ TService::TService(TEventLoop* loop, const TServiceContext& serviceContext)
         context->Logger->info("connected client {}:{}", accepted->Address().Host(), accepted->Address().Port());
 
         std::shared_ptr<TSocketBuffer> buffer(new TSocketBuffer(4096));
-        accepted->Read([this, context, buffer](std::shared_ptr<TSocketHandle> client, size_t readBytes, bool eof) {
+        int* cnt = new int(0);
+        accepted->Read([this, context, buffer, cnt](std::shared_ptr<TSocketHandle> client, size_t readBytes, bool eof) {
             context->Logger->info("read {} bytes, eof = {}", readBytes, eof);
 
+            *cnt += readBytes;
             if (eof) {
                 client->Close();
+            } else if (*cnt > 25) {
+                context->Logger->info("cnt = {}", *cnt);
+                client->Write([context, buffer](TSocketHandlePtr client) {
+                    context->Logger->info("write complete");
+                    buffer->Unwind();
+                }, buffer->CurrentMemoryRegion());
             }
         }, buffer.get());
     });

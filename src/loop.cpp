@@ -53,6 +53,8 @@ void TEventLoop::EpollAddOrModify(std::shared_ptr<TSocketHandle> handle, int eve
         char error[4096];
         throw TException() << "cannot add socket to epoll: " << strerror_r(errno, error, sizeof(error));
     }
+
+    handle->EpollEvents = events;
 }
 
 void TEventLoop::EpollModify(TSocketHandle* handle, int events) {
@@ -62,6 +64,8 @@ void TEventLoop::EpollModify(TSocketHandle* handle, int events) {
         char error[4096];
         throw TException() << "EpollModify failed: " << strerror_r(errno, error, sizeof(error));
     }
+
+    handle->EpollEvents = events;
 }
 
 std::shared_ptr<TSocketHandle> TEventLoop::MakeTcp() {
@@ -87,8 +91,8 @@ void TEventLoop::StartRead(std::shared_ptr<TSocketHandle> handle) {
     EpollAddOrModify(std::move(handle), handle->EpollEvents | EPOLLIN);
 }
 
-void TEventLoop::StopRead(std::shared_ptr<TSocketHandle> handle) {
-    EpollAddOrModify(std::move(handle), handle->EpollEvents & ~EPOLLIN);
+void TEventLoop::StartWrite(std::shared_ptr<TSocketHandle> handle) {
+    EpollAddOrModify(std::move(handle), handle->EpollEvents | EPOLLOUT);
 }
 
 void TEventLoop::Close(TSocketHandle* handle) {
@@ -119,14 +123,42 @@ void TEventLoop::DoRead(TSocketHandle* handle) {
 
     ssize_t ret = ::read(handle->Fd(), handle->ReadDestination->End(), handle->ReadDestination->Remaining());
 
-    if (ret < 0 && errno != EAGAIN) {
-        // TODO
+    if (ret < 0) {
+        if (errno != EAGAIN) {
+            // TODO
+        }
+    } else if (ret > 0) {
+        handle->ReadDestination->Advance(ret);
     }
 
     bool eof = ret == 0;
     handle->ReadHandler(handle->shared_from_this(), ret, eof);
     if (eof) {
         EpollModify(handle, handle->EpollEvents & ~EPOLLIN);
+    }
+}
+
+void TEventLoop::DoWrite(TSocketHandle* handle) {
+    for (;;) {
+        TMemoryRegion currentRegion = handle->WriteChain.CurrentMemoryRegion();
+
+        if (currentRegion.Empty()) {
+            EpollModify(handle, handle->EpollEvents & ~EPOLLOUT);
+            handle->WriteHandler(handle->shared_from_this());
+            break;
+        }
+
+        ssize_t res = write(handle->Fd(), currentRegion.Data(), currentRegion.Size());
+
+        if (res == -1) {
+            if (errno == EAGAIN) {
+                break;
+            } else {
+                // TODO
+            }
+        }
+
+        handle->WriteChain.Advance(res);
     }
 }
 
@@ -181,6 +213,8 @@ void TEventLoop::Do() {
             }
 
             if (fd_events & EPOLLOUT) {
+                ASSERT(handle->WriteHandler);
+                DoWrite(handle.get());
             }
 
             if (fd_events & EPOLLERR) {
