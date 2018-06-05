@@ -84,7 +84,16 @@ public:
     {
     }
 
+    const TSocketAddress& Address() const {
+        return Addr_;
+    }
+
+    void SetAddress(TSocketAddress addr) {
+        Addr_ = addr;
+    }
+
 private:
     int Fd_ = -1;
+    TSocketAddress Addr_;
     TEventLoop* Loop_ = nullptr;
 };

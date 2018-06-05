@@ -75,16 +75,19 @@ void TEventLoop::Listen(std::shared_ptr<TSocketHandle> handle, int backlog) {
 }
 
 std::shared_ptr<TSocketHandle> TEventLoop::DoAccept(TSocketHandle* handle) {
-    TSocketAddress addr;
+    sockaddr_storage addr;
+    socklen_t len = sizeof(sockaddr_storage);
 
-    int fd = ::accept4(handle->Fd(), addr.AddressAs<sockaddr>(), &addr.Length(), SOCK_NONBLOCK);
+    int fd = ::accept4(handle->Fd(), reinterpret_cast<sockaddr*>(&addr), &len, SOCK_NONBLOCK);
 
     if (fd == -1 && fd != EAGAIN && fd != ECONNABORTED) {
         char error[4096];
         throw TException() << "error while accepting from fd=" << handle->Fd() << ": " << strerror_r(errno, error, sizeof(error));
     }
 
-    return std::make_shared<TSocketHandle>(this, fd);
+    std::shared_ptr<TSocketHandle> accepted(new TSocketHandle(this, fd));
+    accepted->SetAddress(TSocketAddress(reinterpret_cast<const sockaddr*>(&addr), len));
+    return accepted;
 }
 
 void TEventLoop::DoSignal() {
