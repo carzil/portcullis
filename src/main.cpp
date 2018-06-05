@@ -5,6 +5,7 @@
 #include "exception.h"
 #include "service.h"
 #include "resource.h"
+#include "version.h"
 
 #include <pybind11/embed.h>
 
@@ -15,6 +16,10 @@ using namespace std::placeholders;
 int main(int argc, char** argv) {
     py::scoped_interpreter guard;
     TEventLoop loop;
+
+    auto logger = spdlog::stdout_color_mt("portcullis");
+
+    logger->info("running portcullis v" PORTCULLIS_VERSION ", git@" PORTCULLIS_GIT_COMMIT);
 
     py::object pyConfig = py::dict();
     py::eval_file(argv[1], pyConfig);
@@ -30,7 +35,7 @@ int main(int argc, char** argv) {
 
     TServiceContext context;
     context.Config = config;
-    context.Logger = spdlog::stdout_color_mt("service");
+    context.Logger = logger;
 
     TService handler(&loop, context);
     handler.Start();

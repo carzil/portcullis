@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.9)
 
+project(portcullis VERSION 0.1)
+
 include(ExternalProject)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wno-pragmas -Wno-deprecated-declarations")
@@ -29,7 +31,20 @@ find_package(PythonLibs REQUIRED)
 
 include_directories(
     ${SPDLOG_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_BINARY_DIR}/src
     src/
+)
+
+execute_process(
+    COMMAND git log -1 --format=%h
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_COMMIT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/version.in
+    ${CMAKE_CURRENT_BINARY_DIR}/src/version.h
 )
 
 file(GLOB_RECURSE resources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/res "res/**")

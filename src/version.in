@@ -1,0 +1,4 @@
+#pragma once
+
+#define PORTCULLIS_VERSION "${portcullis_VERSION}"
+#define PORTCULLIS_GIT_COMMIT "${GIT_COMMIT}"
