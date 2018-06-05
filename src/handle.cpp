@@ -43,13 +43,28 @@ TSocketAddress::TSocketAddress(const sockaddr* sa, size_t len)
 TSocketHandle::~TSocketHandle() {
     if (Fd_ != -1) {
         ::close(Fd_);
+        Loop_->Close(this);
     }
 }
 
 void TSocketHandle::Listen(TAcceptHandler handler, int backlog) {
-    ASSERT(!AcceptHandler);
     AcceptHandler = std::move(handler);
     Loop_->Listen(shared_from_this(), backlog);
+}
+
+void TSocketHandle::Read(TReadHandler handler, TSocketBuffer* readDest) {
+    ReadDestination = readDest;
+    ReadHandler = std::move(handler);
+    Loop_->StartRead(shared_from_this());
+}
+
+void TSocketHandle::Close() {
+    ReadHandler = nullptr;
+    WriteHandler = nullptr;
+    AcceptHandler = nullptr;
+    ConnectHandler = nullptr;
+    ErrorHandler = nullptr;
+    Loop_->Close(this);
 }
 
 void TSocketHandle::Bind(const TSocketAddress& addr) {

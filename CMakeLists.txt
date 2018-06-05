@@ -47,6 +47,7 @@ set(SOURCES
     src/resource.cpp
     src/loop.cpp
     src/handle.cpp
+    src/buffer.cpp
 )
 
 set_source_files_properties(${GENERATED_RESOURCES} PROPERTIES GENERATED TRUE)

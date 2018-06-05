@@ -38,20 +38,29 @@ void TEventLoop::EpollAddOrModify(std::shared_ptr<TSocketHandle> handle, int eve
         op = EPOLL_CTL_ADD;
         handle->Registered = true;
 
-        if (Handles_.size() < handle->Fd()) {
+        if (Handles_.size() <= handle->Fd()) {
             Handles_.resize(handle->Fd() + 1);
         }
 
         Handles_[handle->Fd()] = handle;
     }
 
-    int res = EpollOp(op, handle->Fd(), events);;
+    int res = EpollOp(op, handle->Fd(), events);
 
     if (res == -1) {
         Handles_[handle->Fd()] = nullptr;
 
         char error[4096];
         throw TException() << "cannot add socket to epoll: " << strerror_r(errno, error, sizeof(error));
+    }
+}
+
+void TEventLoop::EpollModify(TSocketHandle* handle, int events) {
+    int res = EpollOp(EPOLL_CTL_MOD, handle->Fd(), events);
+
+    if (res == -1) {
+        char error[4096];
+        throw TException() << "EpollModify failed: " << strerror_r(errno, error, sizeof(error));
     }
 }
 
@@ -71,7 +80,19 @@ void TEventLoop::Listen(std::shared_ptr<TSocketHandle> handle, int backlog) {
         char error[4096];
         throw TException() << "listen failed: " << strerror_r(errno, error, sizeof(error));;
     }
-    EpollAddOrModify(std::move(handle), EPOLLIN);
+    EpollAddOrModify(std::move(handle), handle->EpollEvents | EPOLLIN);
+}
+
+void TEventLoop::StartRead(std::shared_ptr<TSocketHandle> handle) {
+    EpollAddOrModify(std::move(handle), handle->EpollEvents | EPOLLIN);
+}
+
+void TEventLoop::StopRead(std::shared_ptr<TSocketHandle> handle) {
+    EpollAddOrModify(std::move(handle), handle->EpollEvents & ~EPOLLIN);
+}
+
+void TEventLoop::Close(TSocketHandle* handle) {
+    Handles_[handle->Fd()] = nullptr;
 }
 
 std::shared_ptr<TSocketHandle> TEventLoop::DoAccept(TSocketHandle* handle) {
@@ -88,6 +109,25 @@ std::shared_ptr<TSocketHandle> TEventLoop::DoAccept(TSocketHandle* handle) {
     std::shared_ptr<TSocketHandle> accepted(new TSocketHandle(this, fd));
     accepted->SetAddress(TSocketAddress(reinterpret_cast<const sockaddr*>(&addr), len));
     return accepted;
+}
+
+void TEventLoop::DoRead(TSocketHandle* handle) {
+    if (handle->ReadDestination->Remaining() == 0) {
+        EpollModify(handle, handle->EpollEvents & ~EPOLLIN);
+        return;
+    }
+
+    ssize_t ret = ::read(handle->Fd(), handle->ReadDestination->End(), handle->ReadDestination->Remaining());
+
+    if (ret < 0 && errno != EAGAIN) {
+        // TODO
+    }
+
+    bool eof = ret == 0;
+    handle->ReadHandler(handle->shared_from_this(), ret, eof);
+    if (eof) {
+        EpollModify(handle, handle->EpollEvents & ~EPOLLIN);
+    }
 }
 
 void TEventLoop::DoSignal() {
@@ -135,11 +175,15 @@ void TEventLoop::Do() {
                 if (handle->AcceptHandler) {
                     std::shared_ptr<TSocketHandle> connected = DoAccept(handle.get());
                     handle->AcceptHandler(std::move(handle), std::move(connected));
-                } else {
-                    throw TException() << "empty AcceptHandler";
+                } else if (handle->ReadHandler) {
+                    DoRead(handle.get());
                 }
-            } else if (fd_events & EPOLLOUT) {
-                throw TException() << "oops";
+            }
+
+            if (fd_events & EPOLLOUT) {
+            }
+
+            if (fd_events & EPOLLERR) {
             }
         }
     }

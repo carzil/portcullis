@@ -19,6 +19,10 @@ public:
     std::shared_ptr<TSocketHandle> MakeTcp();
 
     void Listen(std::shared_ptr<TSocketHandle> handle, int backlog);
+    void StartRead(std::shared_ptr<TSocketHandle> handle);
+    void StopRead(std::shared_ptr<TSocketHandle> handle);
+    void Close(TSocketHandle* handle);
+
     void Signal(int sig, TSignalHandler handler);
 
     void RunForever();
@@ -27,8 +31,10 @@ public:
 private:
     int EpollOp(int op, int fd, int events);
     void EpollAddOrModify(std::shared_ptr<TSocketHandle> handle, int events);
+    void EpollModify(TSocketHandle* handle, int events);
     void Do();
     std::shared_ptr<TSocketHandle> DoAccept(TSocketHandle* handle);
+    void DoRead(TSocketHandle* handle);
     void DoSignal();
 
     int Fd_ = -1;

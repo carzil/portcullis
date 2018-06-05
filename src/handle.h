@@ -6,15 +6,19 @@
 #include <netinet/ip.h>
 #include <fcntl.h>
 
+#include "buffer.h"
 #include "exception.h"
 
 class TEventLoop;
 class TSocketHandle;
 
-using TReadHandler = std::function<void(std::shared_ptr<TSocketHandle>)>;
-using TWriteHandler = std::function<void(std::shared_ptr<TSocketHandle>)>;
-using TAcceptHandler = std::function<void(std::shared_ptr<TSocketHandle>, std::shared_ptr<TSocketHandle>)>;
-using TConnectHandler = std::function<void(std::shared_ptr<TSocketHandle>)>;
+using TSocketHandlePtr = std::shared_ptr<TSocketHandle>;
+
+using TReadHandler = std::function<void(TSocketHandlePtr, size_t readBytes, bool eof)>;
+using TErrorHandler = std::function<void(TSocketHandlePtr, int err)>;
+using TWriteHandler = std::function<void(TSocketHandlePtr)>;
+using TAcceptHandler = std::function<void(TSocketHandlePtr, TSocketHandlePtr)>;
+using TConnectHandler = std::function<void(TSocketHandlePtr)>;
 
 class TSocketAddress {
 public:
@@ -60,6 +64,8 @@ class TSocketHandle : public std::enable_shared_from_this<TSocketHandle> {
 public:
     void Listen(TAcceptHandler handler, int backlog = 1);
     void Bind(const TSocketAddress& addr);
+    void Read(TReadHandler handler, TSocketBuffer* destination);
+    void Close();
 
     ~TSocketHandle();
 
@@ -71,8 +77,12 @@ public:
     TWriteHandler WriteHandler;
     TAcceptHandler AcceptHandler;
     TConnectHandler ConnectHandler;
+    TErrorHandler ErrorHandler;
 
     bool Registered = false;
+    int EpollEvents = 0;
+
+    TSocketBuffer* ReadDestination = nullptr;
 
     int Fd() {
         return Fd_;

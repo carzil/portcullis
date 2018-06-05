@@ -2,6 +2,9 @@
 
 #include <unistd.h>
 #include <time.h>
+#include <fcntl.h>
+
+#include <cstring>
 
 #include "exception.h"
 
