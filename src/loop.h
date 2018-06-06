@@ -34,8 +34,7 @@ public:
 
 private:
     int EpollOp(int op, int fd, int events);
-    void EpollAddOrModify(TSocketHandle* handle, int events);
-    void EpollModify(TSocketHandle* handle, int events);
+    void EpollAdd(TSocketHandlePtr handle, int events);
     void Do();
     void DoAccept(TSocketHandle* handle);
     void DoRead(TSocketHandle* handle);

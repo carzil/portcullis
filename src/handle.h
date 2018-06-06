@@ -58,6 +58,11 @@ std::vector<TSocketAddress> GetAddrInfo(const std::string& host, const std::stri
 
 class TSocketHandle : public std::enable_shared_from_this<TSocketHandle> {
 public:
+    enum {
+        ReadEvent = 1,
+        WriteEvent = 2
+    };
+
     void Bind(const TSocketAddress& addr);
     void Listen(TAcceptHandler handler, int backlog = 1);
 
@@ -71,6 +76,14 @@ public:
     void Write(TMemoryRegionChain chain, TWriteHandler handler);
     void Write(TMemoryRegion region, TWriteHandler handler) {
         Write(TMemoryRegionChain({ region }), std::move(handler));
+    }
+
+    inline bool Ready(int event) {
+        return ReadyEvents & event;
+    }
+
+    inline bool Enabled(int event) {
+        return EnabledEvents & event;
     }
 
     void Close();
@@ -88,7 +101,8 @@ public:
     TErrorHandler ErrorHandler;
 
     bool Registered = false;
-    int EpollEvents = 0;
+    int ReadyEvents = 0;
+    int EnabledEvents = 0;
 
     TSocketBuffer* ReadDestination = nullptr;
     TMemoryRegionChain WriteChain;
