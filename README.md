@@ -6,3 +6,7 @@ cmake ..
 make
 ```
 
+# How to run Portcullis
+```
+portcullis <path-to-config>
+```
