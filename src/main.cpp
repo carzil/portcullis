@@ -28,6 +28,7 @@ int main(int argc, char** argv) {
     config.Name = pyConfig["name"].cast<std::string>();
     config.Host = pyConfig["host"].cast<std::string>();
     config.Port = pyConfig["port"].cast<std::string>();
+    config.Backlog = pyConfig["backlog"].cast<size_t>();
     config.HandlerFile = pyConfig["handler_file"].cast<std::string>();
 
     config.BackendHost = pyConfig["backend_host"].cast<std::string>();

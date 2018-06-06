@@ -19,24 +19,41 @@ TSocketAddress::TSocketAddress(const sockaddr* sa, size_t len)
     : Len_(len)
 {
     memcpy(&Addr_, sa, len);
+}
 
-    char hostStr[std::max(INET_ADDRSTRLEN, INET6_ADDRSTRLEN)];
-    const sockaddr_in* in = reinterpret_cast<const sockaddr_in*>(sa);
-    const sockaddr_in6* in6 = reinterpret_cast<const sockaddr_in6*>(sa);
+uint16_t TSocketAddress::Port() const {
+    const sockaddr* sa = reinterpret_cast<const sockaddr*>(&Addr_);
     switch (sa->sa_family) {
         case AF_INET:
-            Port_ = ntohs(in->sin_port);
-            Host_ = ::inet_ntop(sa->sa_family, &in->sin_addr, reinterpret_cast<char*>(&hostStr), sizeof(hostStr));
+            return ntohs(reinterpret_cast<const sockaddr_in*>(sa)->sin_port);
+        case AF_INET6:
+            return ntohs(reinterpret_cast<const sockaddr_in6*>(sa)->sin6_port);
+        default:
+            throw TException() << "unknown socket familly: " << sa->sa_family;
+    };
+}
+
+std::string TSocketAddress::Host() const {
+    char hostStr[std::max(INET_ADDRSTRLEN, INET6_ADDRSTRLEN)];
+    const sockaddr* sa = reinterpret_cast<const sockaddr*>(&Addr_);
+    const sockaddr_in* in = reinterpret_cast<const sockaddr_in*>(sa);
+    const sockaddr_in6* in6 = reinterpret_cast<const sockaddr_in6*>(sa);
+    const char* host = nullptr;
+    switch (sa->sa_family) {
+        case AF_INET:
+            host = ::inet_ntop(sa->sa_family, &in->sin_addr, reinterpret_cast<char*>(&hostStr), sizeof(hostStr));
             break;
         case AF_INET6:
-            Port_ = ntohs(in6->sin6_port);
-            Host_ = ::inet_ntop(sa->sa_family, &in6->sin6_addr, reinterpret_cast<char*>(&hostStr), sizeof(hostStr));
+            host = ::inet_ntop(sa->sa_family, &in6->sin6_addr, reinterpret_cast<char*>(&hostStr), sizeof(hostStr));
             break;
         default:
             throw TException() << "unknown socket familly: " << sa->sa_family;
     };
-
-    Host_ = hostStr;
+    if (host != nullptr) {
+        return std::string(host);
+    } else {
+        return std::string();
+    }
 }
 
 

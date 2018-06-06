@@ -27,7 +27,6 @@ void TConnection::ReadFromClient(TSocketHandlePtr client, size_t readBytes, bool
     }
 
     client->PauseRead();
-    Backend_->PauseRead();
 
     Backend_->Write(ClientBuffer_.CurrentMemoryRegion(), [this](TSocketHandlePtr backend) {
         ClientBuffer_.Reset();
@@ -44,7 +43,6 @@ void TConnection::ReadFromBackend(TSocketHandlePtr backend, size_t readBytes, bo
     }
 
     backend->PauseRead();
-    Client_->PauseRead();
 
     Client_->Write(BackendBuffer_.CurrentMemoryRegion(), [this](TSocketHandlePtr client) {
         BackendBuffer_.Reset();
@@ -82,7 +80,7 @@ TService::TService(TEventLoop* loop, const TServiceContext& serviceContext)
             }
             Connections_[connection->Id()] = std::move(connection);
         });
-    });
+    }, Context_->Config.Backlog);
 }
 
 void TService::Start() {

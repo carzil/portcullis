@@ -25,13 +25,11 @@ public:
     TSocketAddress();
     TSocketAddress(const sockaddr* sa, size_t len);
 
-    inline uint16_t Port() const {
-        return Port_;
-    }
+    void InitPort();
+    void InitHost();
 
-    inline std::string Host() const {
-        return Host_;
-    }
+    inline uint16_t Port() const;
+    std::string Host() const;
 
     template<class T>
     T* AddressAs() {
@@ -54,8 +52,6 @@ public:
 private:
     sockaddr_storage Addr_;
     socklen_t Len_;
-    uint16_t Port_ = 0;
-    std::string Host_;
 };
 
 std::vector<TSocketAddress> GetAddrInfo(const std::string& host, const std::string& service, bool listener, const std::string& protocol);

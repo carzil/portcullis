@@ -76,6 +76,8 @@ TSocketHandlePtr TEventLoop::MakeTcp() {
         throw TException() << "tcp socket creating failed: " << strerror_r(errno, error, sizeof(error));
     }
 
+    SetNonBlocking(fd);
+
     return std::make_shared<TSocketHandle>(this, fd);
 }
 
@@ -100,7 +102,8 @@ void TEventLoop::StartWrite(TSocketHandle* handle) {
 }
 
 void TEventLoop::Connect(TSocketHandle* handle) {
-    if (::connect(handle->Fd(), handle->ConnectEndpoint.AddressAs<sockaddr>(), handle->ConnectEndpoint.Length()) == -1) {
+    int ret = ::connect(handle->Fd(), handle->ConnectEndpoint.AddressAs<sockaddr>(), handle->ConnectEndpoint.Length());
+    if (ret == -1 && errno != EINPROGRESS) {
         char error[4096];
         throw TException() << "connect failed: " << strerror_r(errno, error, sizeof(error));
     }
@@ -112,19 +115,23 @@ void TEventLoop::Close(int fd) {
 }
 
 void TEventLoop::DoAccept(TSocketHandle* handle) {
-    sockaddr_storage addr;
-    socklen_t len = sizeof(sockaddr_storage);
+    for (;;) {
+        sockaddr_storage addr;
+        socklen_t len = sizeof(sockaddr_storage);
+        int fd = ::accept4(handle->Fd(), reinterpret_cast<sockaddr*>(&addr), &len, SOCK_NONBLOCK);
 
-    int fd = ::accept4(handle->Fd(), reinterpret_cast<sockaddr*>(&addr), &len, SOCK_NONBLOCK);
+        if (fd == -1) {
+            if (errno == EAGAIN) {
+                break;;
+            }
+            char error[4096];
+            throw TException() << "error while accepting from fd=" << handle->Fd() << ": " << strerror_r(errno, error, sizeof(error));
+        }
 
-    if (fd == -1 && fd != EAGAIN && fd != ECONNABORTED) {
-        char error[4096];
-        throw TException() << "error while accepting from fd=" << handle->Fd() << ": " << strerror_r(errno, error, sizeof(error));
+        TSocketHandlePtr accepted(new TSocketHandle(this, fd));
+        accepted->SetAddress(TSocketAddress(reinterpret_cast<const sockaddr*>(&addr), len));
+        handle->AcceptHandler(handle->shared_from_this(), std::move(accepted));
     }
-
-    TSocketHandlePtr accepted(new TSocketHandle(this, fd));
-    accepted->SetAddress(TSocketAddress(reinterpret_cast<const sockaddr*>(&addr), len));
-    handle->AcceptHandler(handle->shared_from_this(), std::move(accepted));
 }
 
 void TEventLoop::DoRead(TSocketHandle* handle) {
@@ -215,22 +222,22 @@ void TEventLoop::Do() {
         if (fd == SignalFd_) {
             DoSignal();
         } else {
-            TSocketHandlePtr handle = Handles_[fd];
+            TSocketHandle* handle = Handles_[fd].get();
 
             if (fd_events & EPOLLIN) {
                 if (handle->AcceptHandler) {
-                    DoAccept(handle.get());
+                    DoAccept(handle);
                 } else if (handle->ReadHandler) {
-                    DoRead(handle.get());
+                    DoRead(handle);
                 }
             }
 
             if (fd_events & EPOLLOUT) {
                 if (handle->ConnectHandler) {
-                    DoConnect(handle.get());
+                    DoConnect(handle);
                 } else {
                     ASSERT(handle->WriteHandler);
-                    DoWrite(handle.get());
+                    DoWrite(handle);
                 }
             }
 

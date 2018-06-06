@@ -19,6 +19,8 @@ struct TServiceConfig {
     std::string Host;
     std::string Port;
 
+    size_t Backlog = 0;
+
     std::string BackendHost;
     std::string BackendPort;
 };
