@@ -5,6 +5,8 @@
 #include <spdlog/spdlog.h>
 #include <pybind11/eval.h>
 
+#include <deque>
+
 #include "loop.h"
 #include "resource.h"
 #include "utils.h"
@@ -45,10 +47,12 @@ public:
     void ReadFromBackend(TSocketHandlePtr backend, size_t readBytes, bool eof);
 
     int Id() const {
-        return Client_->Fd();
+        return Id_;
     }
 
 private:
+    void End();
+
     TService* Parent_ = nullptr;
     TServiceContextPtr Context_;
     TSocketHandlePtr Client_;
@@ -56,6 +60,7 @@ private:
     TSocketBuffer ClientBuffer_;
     TSocketBuffer BackendBuffer_;
     py::object Handler_;
+    size_t Id_ = 0;
 };
 
 class TService {
@@ -64,8 +69,9 @@ public:
     void Start();
     void Shutdown();
 
-    void EndConnection(TConnection* connection) {
-        Connections_[connection->Id()] = nullptr;
+    void FinishConnection(TConnection* connection) {
+        FinishedConnections_.push_back(std::move(Connections_[connection->Id()]));
+
     }
 
     void StartConnection(TSocketHandlePtr listener, TSocketHandlePtr client);
@@ -77,5 +83,6 @@ private:
     TEventLoop* Loop_ = nullptr;
     std::shared_ptr<TSocketHandle> Listener_;
     std::vector<std::unique_ptr<TConnection>> Connections_;
+    std::deque<std::unique_ptr<TConnection>> FinishedConnections_;
     std::string ConfigPath_;
 };

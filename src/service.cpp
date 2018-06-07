@@ -24,15 +24,16 @@ TConnection::TConnection(TService* parent, TServiceContextPtr context, TSocketHa
     , ClientBuffer_(4096)
     , BackendBuffer_(4096)
     , Handler_(context->HandlerClass())
+    , Id_(Client_->Fd())
 {
+    ASSERT(Id_ != -1);
     Client_->Read(&ClientBuffer_, std::bind(&TConnection::ReadFromClient, this, _1, _2, _3));
     Backend_->Read(&BackendBuffer_, std::bind(&TConnection::ReadFromBackend, this, _1, _2, _3));
 }
 
 void TConnection::ReadFromClient(TSocketHandlePtr client, size_t readBytes, bool eof) {
     if (eof) {
-        Client_->Close();
-        Backend_->Close();
+        End();
         return;
     }
 
@@ -47,8 +48,7 @@ void TConnection::ReadFromClient(TSocketHandlePtr client, size_t readBytes, bool
 
 void TConnection::ReadFromBackend(TSocketHandlePtr backend, size_t readBytes, bool eof) {
     if (eof) {
-        Backend_->Close();
-        Client_->Close();
+        End();
         return;
     }
 
@@ -59,6 +59,12 @@ void TConnection::ReadFromBackend(TSocketHandlePtr backend, size_t readBytes, bo
         Backend_->RestartRead();
         Client_->RestartRead();
     });
+}
+
+void TConnection::End() {
+    Backend_->Close();
+    Client_->Close();
+    Parent_->FinishConnection(this);
 }
 
 
@@ -158,5 +164,9 @@ void TService::Start() {
         } catch (const std::exception& e) {
             Context_->Logger->error("context reload failed: {}", e.what());
         }
+    });
+
+    Loop_->Cleanup([this]() {
+        FinishedConnections_.clear();
     });
 }

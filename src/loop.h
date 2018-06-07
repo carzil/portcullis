@@ -31,6 +31,7 @@ private:
 };
 
 using TSignalHandler = std::function<void(TSignalInfo info)>;
+using TCleanupHandler = std::function<void()>;
 
 class TEventLoop {
 public:
@@ -49,6 +50,10 @@ public:
     void Close(int fd);
 
     void Signal(int sig, TSignalHandler handler);
+
+    void Cleanup(TCleanupHandler handler) {
+        CleanupHandlers_.push_back(std::move(handler));
+    }
 
     void RunForever();
     void Shutdown();
@@ -70,4 +75,5 @@ private:
     int SignalFd_ = -1;
     sigset_t SignalsHandled_;
     std::vector<TSignalHandler> SignalHandlers_;
+    std::vector<TCleanupHandler> CleanupHandlers_;
 };

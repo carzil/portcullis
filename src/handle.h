@@ -93,6 +93,10 @@ public:
         return EnabledEvents & event;
     }
 
+    inline bool Active() {
+        return Fd_ != -1;
+    }
+
     void Close();
 
     ~TSocketHandle();

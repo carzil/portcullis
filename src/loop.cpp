@@ -71,6 +71,9 @@ void TEventLoop::Listen(TSocketHandle* handle, int backlog) {
 }
 
 void TEventLoop::StartRead(TSocketHandle* handle) {
+    if (!handle->Active()) {
+        return;
+    }
     handle->EnabledEvents |= TSocketHandle::ReadEvent;
     if (handle->Ready(TSocketHandle::ReadEvent)) {
         DoRead(handle);
@@ -82,6 +85,9 @@ void TEventLoop::StopRead(TSocketHandle* handle) {
 }
 
 void TEventLoop::StartWrite(TSocketHandle* handle) {
+    if (!handle->Active()) {
+        return;
+    }
     handle->EnabledEvents |= TSocketHandle::WriteEvent;
     if (handle->Ready(TSocketHandle::WriteEvent)) {
         DoWrite(handle);
@@ -124,6 +130,7 @@ void TEventLoop::DoAccept(TSocketHandle* handle) {
 }
 
 void TEventLoop::DoRead(TSocketHandle* handle) {
+    ASSERT(handle->Active());
     if (handle->ReadDestination->Remaining() == 0) {
         handle->EnabledEvents &= ~TSocketHandle::ReadEvent;
         return;
@@ -145,6 +152,7 @@ void TEventLoop::DoRead(TSocketHandle* handle) {
 }
 
 void TEventLoop::DoWrite(TSocketHandle* handle) {
+    ASSERT(handle->Active());
     for (;;) {
         TMemoryRegion currentRegion = handle->WriteChain.CurrentMemoryRegion();
 
@@ -169,6 +177,7 @@ void TEventLoop::DoWrite(TSocketHandle* handle) {
 }
 
 void TEventLoop::DoConnect(TSocketHandle* handle) {
+    ASSERT(handle->Active());
     TSocketHandlePtr ptr = handle->shared_from_this();
     handle->ConnectHandler(std::move(ptr));
     handle->ConnectHandler = nullptr;
@@ -201,7 +210,10 @@ void TEventLoop::Do() {
     epoll_event events[MaxEvents];
 
     int res = ::epoll_wait(Fd_, events, MaxEvents, -1);
-    if (res == -1 && errno != EINTR) {
+    if (res == -1) {
+        if (errno == EINTR) {
+            return;
+        }
         char error[4096];
         throw TException() << "epoll_wait failed: " << strerror_r(errno, error, sizeof(error));
     }
@@ -235,34 +247,36 @@ void TEventLoop::Do() {
         if (fd == SignalFd_) {
             DoSignal();
         } else {
-            TSocketHandle* handle = Handles_[fd].get();
+            TSocketHandlePtr handle = Handles_[fd];
 
-            if (!handle) {
+            if (!handle || !handle->Active()) {
                 continue;
             }
 
             if (fd_events & EPOLLIN) {
                 if (handle->AcceptHandler) {
-                    DoAccept(handle);
+                    DoAccept(handle.get());
                 } else if (handle->Enabled(TSocketHandle::ReadEvent) && handle->ReadHandler) {
-                    DoRead(handle);
+                    DoRead(handle.get());
                 }
             }
 
-            handle = Handles_[fd].get();
-
-            if (!handle) {
+            if (!handle->Active()) {
                 continue;
             }
 
             if (fd_events & EPOLLOUT) {
                 if (handle->ConnectHandler) {
-                    DoConnect(handle);
+                    DoConnect(handle.get());
                 } else if (handle->Enabled(TSocketHandle::WriteEvent) && handle->WriteHandler) {
-                    DoWrite(handle);
+                    DoWrite(handle.get());
                 }
             }
         }
+    }
+
+    for (const TCleanupHandler& cleanupHandler : CleanupHandlers_) {
+        cleanupHandler();
     }
 }
 
