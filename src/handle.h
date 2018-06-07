@@ -28,7 +28,7 @@ public:
     void InitPort();
     void InitHost();
 
-    inline uint16_t Port() const;
+    uint16_t Port() const;
     std::string Host() const;
 
     template<class T>

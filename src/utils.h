@@ -4,6 +4,11 @@
 #include <time.h>
 #include <fcntl.h>
 
+#include <netdb.h>
+#include <sys/types.h>
+#include <arpa/inet.h>
+#include <netinet/ip.h>
+
 #include <cstring>
 
 #include "exception.h"
@@ -42,3 +47,5 @@ inline int64_t GetCurrentMillis() {
     }
     return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
+
+bool AddrsEqual(const sockaddr* sa1, const sockaddr* sa2);

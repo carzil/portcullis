@@ -56,7 +56,7 @@ private:
 
 class TService {
 public:
-    TService(TEventLoop* loop, const TServiceContext& context);
+    TService(TEventLoop* loop, const std::string& configPath);
     void Start();
 
     void EndConnection(TConnection* connection) {
@@ -64,8 +64,11 @@ public:
     }
 
 private:
+    std::shared_ptr<TServiceContext> ReloadContext();
+
     std::shared_ptr<TServiceContext> Context_;
     TEventLoop* Loop_ = nullptr;
     std::shared_ptr<TSocketHandle> Listener_;
     std::vector<std::unique_ptr<TConnection>> Connections_;
+    std::string ConfigPath_;
 };

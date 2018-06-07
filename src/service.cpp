@@ -4,6 +4,7 @@
 #include <functional>
 
 #include "service.h"
+#include "version.h"
 
 using namespace std::placeholders;
 
@@ -52,25 +53,61 @@ void TConnection::ReadFromBackend(TSocketHandlePtr backend, size_t readBytes, bo
 }
 
 
-TService::TService(TEventLoop* loop, const TServiceContext& serviceContext)
+TService::TService(TEventLoop* loop, const std::string& configPath)
     : Loop_(loop)
-    , Context_(std::make_shared<TServiceContext>(serviceContext))
+    , ConfigPath_(configPath)
 {
-    std::shared_ptr<TServiceContext> context = Context_;
+    std::shared_ptr<TServiceContext> context = ReloadContext();
+    atomic_store(&Context_, context);
+}
 
-    Loop_->Signal(SIGINT, [this, context](int sig) {
-        context->Logger->info("got sigint");
+std::shared_ptr<TServiceContext> TService::ReloadContext() {
+    py::object pyConfig = py::dict();
+    py::eval_file(ConfigPath_, pyConfig);
+
+    TServiceConfig config;
+    config.Name = pyConfig["name"].cast<std::string>();
+    config.Host = pyConfig["host"].cast<std::string>();
+    config.Port = pyConfig["port"].cast<std::string>();
+    config.Backlog = pyConfig["backlog"].cast<size_t>();
+    config.HandlerFile = pyConfig["handler_file"].cast<std::string>();
+
+    config.BackendHost = pyConfig["backend_host"].cast<std::string>();
+    config.BackendPort = pyConfig["backend_port"].cast<std::string>();
+
+    TServiceContext context;
+    context.Config = config;
+    context.Logger = spdlog::get("main");
+
+    return std::make_shared<TServiceContext>(std::move(context));
+}
+
+void TService::Start() {
+    Context_->Logger->info("Portcullis (v{}, git@{}) guarding service '{}'", PORTCULLIS_VERSION, PORTCULLIS_GIT_COMMIT, Context_->Config.Name);
+
+    Loop_->Signal(SIGINT, [this](int sig) {
+        Context_->Logger->info("got sigint");
         Loop_->Shutdown();
+    });
+
+    Loop_->Signal(SIGUSR1, [this](int sig) {
+        Context_->Logger->info("reloading config");
+        std::shared_ptr<TServiceContext> newContext = ReloadContext();
+        std::atomic_store(&Context_, std::move(newContext));
+        Context_->Logger->info("config reloaded");
     });
 
     Listener_ = Loop_->MakeTcp();
     std::vector<TSocketAddress> addrs = GetAddrInfo(Context_->Config.Host, Context_->Config.Port, true, "tcp");
     Listener_->Bind(addrs[0]);
 
-    addrs = GetAddrInfo(Context_->Config.BackendHost, Context_->Config.BackendPort, false, "tcp");
-    TSocketAddress backendAddr = addrs[0];
-    Listener_->Listen([this, context, backendAddr](TSocketHandlePtr listener, TSocketHandlePtr client) {
-        // context->Logger->info("connected client {}:{}", client->Address().Host(), client->Address().Port());
+    Context_->Logger->info("listening on {}:{}", addrs[0].Host(), addrs[0].Port());
+
+    Listener_->Listen([this](TSocketHandlePtr listener, TSocketHandlePtr client) {
+        std::shared_ptr<TServiceContext> context = std::atomic_load(&Context_);
+
+        std::vector<TSocketAddress> addrs = GetAddrInfo(Context_->Config.BackendHost, Context_->Config.BackendPort, false, "tcp");
+        TSocketAddress backendAddr = addrs[0];
 
         TSocketHandlePtr backend = Loop_->MakeTcp();
         backend->Connect(backendAddr, [this, client, context](TSocketHandlePtr backend) {
@@ -81,7 +118,4 @@ TService::TService(TEventLoop* loop, const TServiceContext& serviceContext)
             Connections_[connection->Id()] = std::move(connection);
         });
     }, Context_->Config.Backlog);
-}
-
-void TService::Start() {
 }

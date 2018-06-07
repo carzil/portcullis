@@ -17,28 +17,14 @@ int main(int argc, char** argv) {
     py::scoped_interpreter guard;
     TEventLoop loop;
 
-    auto logger = spdlog::stdout_color_mt("portcullis");
+    auto logger = spdlog::stdout_color_mt("main");
 
-    logger->info("running portcullis v" PORTCULLIS_VERSION ", git@" PORTCULLIS_GIT_COMMIT);
+    if (argc < 2) {
+        logger->critical("usage: portcullis CONFIG_FILE");
+        return 1;
+    }
 
-    py::object pyConfig = py::dict();
-    py::eval_file(argv[1], pyConfig);
-
-    TServiceConfig config;
-    config.Name = pyConfig["name"].cast<std::string>();
-    config.Host = pyConfig["host"].cast<std::string>();
-    config.Port = pyConfig["port"].cast<std::string>();
-    config.Backlog = pyConfig["backlog"].cast<size_t>();
-    config.HandlerFile = pyConfig["handler_file"].cast<std::string>();
-
-    config.BackendHost = pyConfig["backend_host"].cast<std::string>();
-    config.BackendPort = pyConfig["backend_port"].cast<std::string>();
-
-    TServiceContext context;
-    context.Config = config;
-    context.Logger = logger;
-
-    TService handler(&loop, context);
+    TService handler(&loop, argv[1]);
     handler.Start();
 
     loop.RunForever();
