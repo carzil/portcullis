@@ -48,4 +48,4 @@ inline int64_t GetCurrentMillis() {
     return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
-bool AddrsEqual(const sockaddr* sa1, const sockaddr* sa2);
+std::string AbsPath(const std::string& path);

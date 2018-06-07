@@ -33,6 +33,27 @@ uint16_t TSocketAddress::Port() const {
     };
 }
 
+bool TSocketAddress::operator==(const TSocketAddress& other) const {
+    const sockaddr* sa1 = AddressAs<const sockaddr>();
+    const sockaddr* sa2 = other.AddressAs<const sockaddr>();
+
+    if (sa1->sa_family != sa2->sa_family) {
+        return false;
+    }
+
+    if (sa1->sa_family == AF_INET) {
+        const sockaddr_in* in1 = reinterpret_cast<const sockaddr_in*>(sa1);
+        const sockaddr_in* in2 = reinterpret_cast<const sockaddr_in*>(sa2);
+        return in1->sin_port == in2->sin_port && memcmp(&in1->sin_addr, &in2->sin_addr, sizeof(struct in_addr)) == 0;
+    } else if (sa2->sa_family == AF_INET6) {
+        const sockaddr_in6* in1 = reinterpret_cast<const sockaddr_in6*>(sa1);
+        const sockaddr_in6* in2 = reinterpret_cast<const sockaddr_in6*>(sa2);
+        return in1->sin6_port == in2->sin6_port && memcmp(&in1->sin6_addr, &in2->sin6_addr, sizeof(struct in6_addr)) == 0;
+    }
+
+    throw TException() << "unknown family " << sa1->sa_family;
+}
+
 std::string TSocketAddress::Host() const {
     char hostStr[std::max(INET_ADDRSTRLEN, INET6_ADDRSTRLEN)];
     const sockaddr* sa = reinterpret_cast<const sockaddr*>(&Addr_);
@@ -104,6 +125,9 @@ void TSocketHandle::Close() {
     ConnectHandler = nullptr;
     ErrorHandler = nullptr;
 
+    ReadyEvents = 0;
+    EnabledEvents = 0;
+
     if (Fd_ != -1) {
         int fd = Fd_;
         ::close(fd);
@@ -117,6 +141,15 @@ void TSocketHandle::Bind(const TSocketAddress& addr) {
     if (res < 0) {
         char error[4096];
         throw TException() << "bind failed: " << strerror_r(errno, error, sizeof(error));
+    }
+    SetAddress(addr);
+}
+
+void TSocketHandle::ReuseAddr() {
+    int enable = 1;
+    if (setsockopt(Fd(), SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0) {
+        char error[4096];
+        throw TException() << "setsockopt failed: " << strerror_r(errno, error, sizeof(error));
     }
 }
 

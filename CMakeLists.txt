@@ -4,7 +4,7 @@ project(portcullis VERSION 0.1)
 
 include(ExternalProject)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wno-pragmas -Wno-deprecated-declarations")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wno-pragmas -Wno-deprecated-declarations -fvisibility=hidden")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0 -fsanitize=address -D_DEBUG_")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
 
@@ -65,6 +65,7 @@ set(SOURCES
     src/loop.cpp
     src/handle.cpp
     src/buffer.cpp
+    src/utils.cpp
 )
 
 set_source_files_properties(${GENERATED_RESOURCES} PROPERTIES GENERATED TRUE)

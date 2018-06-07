@@ -24,6 +24,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    logger->info("running Portcullis (v{}, git@{})", PORTCULLIS_VERSION, PORTCULLIS_GIT_COMMIT);
+
     TService handler(&loop, argv[1]);
     handler.Start();
 

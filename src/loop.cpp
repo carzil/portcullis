@@ -1,5 +1,4 @@
 #include <sys/epoll.h>
-#include <sys/signalfd.h>
 #include <unistd.h>
 
 #include <memory>
@@ -170,7 +169,8 @@ void TEventLoop::DoWrite(TSocketHandle* handle) {
 }
 
 void TEventLoop::DoConnect(TSocketHandle* handle) {
-    handle->ConnectHandler(handle->shared_from_this());
+    TSocketHandlePtr ptr = handle->shared_from_this();
+    handle->ConnectHandler(std::move(ptr));
     handle->ConnectHandler = nullptr;
 }
 
@@ -189,7 +189,7 @@ void TEventLoop::DoSignal() {
         for (int i = 0; i < total_signals; i++) {
             int sig = sigs[i].ssi_signo;
             if (SignalHandlers_[sig]) {
-                SignalHandlers_[sig](sig);
+                SignalHandlers_[sig](TSignalInfo(sigs[i]));
             }
         }
     }
@@ -215,6 +215,10 @@ void TEventLoop::Do() {
 
         TSocketHandle* handle = Handles_[fd].get();
 
+        if (!handle) {
+            continue;
+        }
+
         if (events[i].events & EPOLLIN) {
             handle->ReadyEvents |= TSocketHandle::ReadEvent;
         }
@@ -233,12 +237,22 @@ void TEventLoop::Do() {
         } else {
             TSocketHandle* handle = Handles_[fd].get();
 
+            if (!handle) {
+                continue;
+            }
+
             if (fd_events & EPOLLIN) {
                 if (handle->AcceptHandler) {
                     DoAccept(handle);
                 } else if (handle->Enabled(TSocketHandle::ReadEvent) && handle->ReadHandler) {
                     DoRead(handle);
                 }
+            }
+
+            handle = Handles_[fd].get();
+
+            if (!handle) {
+                continue;
             }
 
             if (fd_events & EPOLLOUT) {

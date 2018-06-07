@@ -49,6 +49,11 @@ public:
         return Len_;
     }
 
+    bool operator==(const TSocketAddress& other) const;
+    bool operator!=(const TSocketAddress& other) const {
+        return !(*this == other);
+    };
+
 private:
     sockaddr_storage Addr_;
     socklen_t Len_;
@@ -77,6 +82,8 @@ public:
     void Write(TMemoryRegion region, TWriteHandler handler) {
         Write(TMemoryRegionChain({ region }), std::move(handler));
     }
+
+    void ReuseAddr();
 
     inline bool Ready(int event) {
         return ReadyEvents & event;

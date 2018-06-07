@@ -8,6 +8,14 @@
 
 using namespace std::placeholders;
 
+static py::object PyEvalFile(const std::string& path) {
+    py::object module = py::dict();
+    module["__builtins__"] = PyEval_GetBuiltins();
+    py::eval_file(path, module);
+    return module;
+}
+
+
 TConnection::TConnection(TService* parent, TServiceContextPtr context, TSocketHandlePtr client, TSocketHandlePtr backend)
     : Parent_(parent)
     , Context_(context)
@@ -15,6 +23,7 @@ TConnection::TConnection(TService* parent, TServiceContextPtr context, TSocketHa
     , Backend_(std::move(backend))
     , ClientBuffer_(4096)
     , BackendBuffer_(4096)
+    , Handler_(context->HandlerClass())
 {
     Client_->Read(&ClientBuffer_, std::bind(&TConnection::ReadFromClient, this, _1, _2, _3));
     Backend_->Read(&BackendBuffer_, std::bind(&TConnection::ReadFromBackend, this, _1, _2, _3));
@@ -62,8 +71,13 @@ TService::TService(TEventLoop* loop, const std::string& configPath)
 }
 
 std::shared_ptr<TServiceContext> TService::ReloadContext() {
-    py::object pyConfig = py::dict();
-    py::eval_file(ConfigPath_, pyConfig);
+    std::shared_ptr<TServiceContext> oldContext = std::atomic_load(&Context_);
+
+    auto logger = spdlog::get("main");
+
+    logger->info("loading config from file {}", AbsPath(ConfigPath_));
+
+    py::object pyConfig = PyEvalFile(ConfigPath_);
 
     TServiceConfig config;
     config.Name = pyConfig["name"].cast<std::string>();
@@ -75,47 +89,74 @@ std::shared_ptr<TServiceContext> TService::ReloadContext() {
     config.BackendHost = pyConfig["backend_host"].cast<std::string>();
     config.BackendPort = pyConfig["backend_port"].cast<std::string>();
 
+    py::object handlerModule = PyEvalFile(config.HandlerFile);
+
     TServiceContext context;
     context.Config = config;
-    context.Logger = spdlog::get("main");
+    context.HandlerClass = handlerModule["Handler"];
+    context.HandlerModule = std::move(handlerModule);
+    context.Logger = logger;
+
+    std::vector<TSocketAddress> addrs = GetAddrInfo(context.Config.Host, context.Config.Port, true, "tcp");
+
+    if (!oldContext || (oldContext->Listener->Address() != addrs[0])) {
+        context.Listener = Loop_->MakeTcp();
+        context.Listener->ReuseAddr();
+        context.Listener->Bind(addrs[0]);
+        context.Listener->Listen(std::bind(&TService::StartConnection, this, _1, _2), context.Config.Backlog);
+
+        context.Logger->info("listening on {}:{}", addrs[0].Host(), addrs[0].Port());
+    } else {
+        context.Listener = oldContext->Listener;
+    }
+
+    addrs = GetAddrInfo(context.Config.BackendHost, context.Config.BackendPort, false, "tcp");
+    context.BackendAddr = addrs[0];
 
     return std::make_shared<TServiceContext>(std::move(context));
 }
 
+void TService::StartConnection(TSocketHandlePtr listener, TSocketHandlePtr client) {
+    std::shared_ptr<TServiceContext> context = std::atomic_load(&Context_);
+
+    TSocketHandlePtr backend = Loop_->MakeTcp();
+    backend->Connect(context->BackendAddr, [this, client, context](TSocketHandlePtr backend) {
+        std::unique_ptr<TConnection> connection(new TConnection(this, std::move(context), std::move(client), std::move(backend)));
+        if (Connections_.size() <= connection->Id()) {
+            Connections_.resize(connection->Id() + 1);
+        }
+        Connections_[connection->Id()] = std::move(connection);
+    });
+}
+
+void TService::Shutdown() {
+    Context_->Logger->info("shutdown request");
+    Loop_->Shutdown();
+}
+
 void TService::Start() {
-    Context_->Logger->info("Portcullis (v{}, git@{}) guarding service '{}'", PORTCULLIS_VERSION, PORTCULLIS_GIT_COMMIT, Context_->Config.Name);
+    if (!Context_) {
+        return;
+    }
 
-    Loop_->Signal(SIGINT, [this](int sig) {
-        Context_->Logger->info("got sigint");
-        Loop_->Shutdown();
+    Loop_->Signal(SIGINT, [this](TSignalInfo info) {
+        Context_->Logger->info("caught SIGINT from pid {}", info.Sender());
+        Shutdown();
     });
 
-    Loop_->Signal(SIGUSR1, [this](int sig) {
-        Context_->Logger->info("reloading config");
-        std::shared_ptr<TServiceContext> newContext = ReloadContext();
-        std::atomic_store(&Context_, std::move(newContext));
-        Context_->Logger->info("config reloaded");
+    Loop_->Signal(SIGTERM, [this](TSignalInfo info) {
+        Context_->Logger->info("caught SIGTERM from pid {}", info.Sender());
+        Shutdown();
     });
 
-    Listener_ = Loop_->MakeTcp();
-    std::vector<TSocketAddress> addrs = GetAddrInfo(Context_->Config.Host, Context_->Config.Port, true, "tcp");
-    Listener_->Bind(addrs[0]);
-
-    Context_->Logger->info("listening on {}:{}", addrs[0].Host(), addrs[0].Port());
-
-    Listener_->Listen([this](TSocketHandlePtr listener, TSocketHandlePtr client) {
-        std::shared_ptr<TServiceContext> context = std::atomic_load(&Context_);
-
-        std::vector<TSocketAddress> addrs = GetAddrInfo(Context_->Config.BackendHost, Context_->Config.BackendPort, false, "tcp");
-        TSocketAddress backendAddr = addrs[0];
-
-        TSocketHandlePtr backend = Loop_->MakeTcp();
-        backend->Connect(backendAddr, [this, client, context](TSocketHandlePtr backend) {
-            std::unique_ptr<TConnection> connection(new TConnection(this, std::move(context), std::move(client), std::move(backend)));
-            if (Connections_.size() <= connection->Id()) {
-                Connections_.resize(connection->Id() + 1);
-            }
-            Connections_[connection->Id()] = std::move(connection);
-        });
-    }, Context_->Config.Backlog);
+    Loop_->Signal(SIGUSR1, [this](TSignalInfo info) {
+        Context_->Logger->info("caught SIGUSR1 from {}", info.Sender());
+        try {
+            std::shared_ptr<TServiceContext> newContext = ReloadContext();
+            std::atomic_store(&Context_, newContext);
+            newContext->Logger->info("context reloaded");
+        } catch (const std::exception& e) {
+            Context_->Logger->error("context reload failed: {}", e.what());
+        }
+    });
 }

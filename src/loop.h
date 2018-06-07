@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/signalfd.h>
+
 #include <functional>
 #include <memory>
 #include <queue>
@@ -9,7 +11,26 @@
 
 #include "handle.h"
 
-using TSignalHandler = std::function<void(int signal)>;
+class TSignalInfo {
+public:
+    TSignalInfo(const signalfd_siginfo& info)
+        : Info_(info)
+    {
+    }
+
+    int Signal() const {
+        return Info_.ssi_signo;
+    }
+
+    pid_t Sender() const {
+        return Info_.ssi_pid;
+    }
+
+private:
+    signalfd_siginfo Info_;
+};
+
+using TSignalHandler = std::function<void(TSignalInfo info)>;
 
 class TEventLoop {
 public:

@@ -9,7 +9,6 @@
 #include "resource.h"
 #include "utils.h"
 
-
 namespace py = pybind11;
 
 struct TServiceConfig {
@@ -28,6 +27,10 @@ struct TServiceConfig {
 struct TServiceContext {
     std::shared_ptr<spdlog::logger> Logger;
     TServiceConfig Config;
+    TSocketHandlePtr Listener;
+    py::object HandlerClass;
+    py::object HandlerModule;
+    TSocketAddress BackendAddr;
 };
 
 using TServiceContextPtr = std::shared_ptr<TServiceContext>;
@@ -52,16 +55,20 @@ private:
     TSocketHandlePtr Backend_;
     TSocketBuffer ClientBuffer_;
     TSocketBuffer BackendBuffer_;
+    py::object Handler_;
 };
 
 class TService {
 public:
     TService(TEventLoop* loop, const std::string& configPath);
     void Start();
+    void Shutdown();
 
     void EndConnection(TConnection* connection) {
         Connections_[connection->Id()] = nullptr;
     }
+
+    void StartConnection(TSocketHandlePtr listener, TSocketHandlePtr client);
 
 private:
     std::shared_ptr<TServiceContext> ReloadContext();
