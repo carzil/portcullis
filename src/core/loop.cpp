@@ -142,7 +142,7 @@ void TEventLoop::DoRead(TSocketHandle* handle) {
         if (errno == EAGAIN) {
             handle->ReadyEvents &= ~TSocketHandle::ReadEvent;
         } else {
-            // TODO
+            return;
         }
     } else if (ret > 0) {
         handle->ReadDestination->Advance(ret);
@@ -168,7 +168,7 @@ void TEventLoop::DoWrite(TSocketHandle* handle) {
                 handle->ReadyEvents &= ~TSocketHandle::WriteEvent;
                 break;
             } else {
-                // TODO
+                return;
             }
         }
 

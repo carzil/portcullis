@@ -59,13 +59,16 @@ foreach(res ${resources})
 endforeach()
 
 set(SOURCES
+    src/core/buffer.cpp
+    src/core/handle.cpp
+    src/core/loop.cpp
+    src/core/resource.cpp
+    src/core/service.cpp
+    src/core/utils.cpp
+    src/core/context.cpp
     src/main.cpp
-    src/service.cpp
-    src/resource.cpp
-    src/loop.cpp
-    src/handle.cpp
-    src/buffer.cpp
-    src/utils.cpp
+    src/python/wrappers.cpp
+    src/shield/splicer.cpp
 )
 
 set_source_files_properties(${GENERATED_RESOURCES} PROPERTIES GENERATED TRUE)

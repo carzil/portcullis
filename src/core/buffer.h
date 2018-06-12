@@ -98,6 +98,10 @@ public:
         return Data_.get();
     }
 
+    void* Data() {
+        return Data_.get();
+    }
+
     template<class T>
     const T DataAs() const {
         return static_cast<const T>(Data_.get());
@@ -116,3 +120,5 @@ private:
     size_t Capacity_ = 0;
     std::unique_ptr<uint8_t[]> Data_ = nullptr;
 };
+
+using TSocketBufferPtr = std::shared_ptr<TSocketBuffer>;

@@ -2,9 +2,8 @@
 
 #include <spdlog/spdlog.h>
 
-#include "exception.h"
-#include "service.h"
-#include "resource.h"
+#include "core/exception.h"
+#include "core/service.h"
 #include "version.h"
 
 #include <pybind11/embed.h>
