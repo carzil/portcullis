@@ -1,0 +1,10 @@
+[Unit]
+Description=Portcullis proxy, service %i
+
+[Service]
+Type=notify
+
+WorkingDirectory=%h/portcullis/build
+ExecStart=%h/portcullis/build/portcullis ../conf/%i.py
+ExecReload=/bin/kill -USR1 $MAINPID
+Restart=on-failure
