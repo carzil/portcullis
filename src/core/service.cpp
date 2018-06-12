@@ -81,6 +81,7 @@ std::shared_ptr<TContext> TService::ReloadContext() {
 
 void TService::Shutdown() {
     ::sd_notify(0, "STOPPING=1");
+    ::sd_notify(0, "STATUS=Shutting down");
     Context_->Logger->info("shutdown request");
     Loop_->Shutdown();
 }
@@ -105,17 +106,20 @@ void TService::Start() {
     Loop_->Signal(SIGUSR1, [this](TSignalInfo info) {
         std::shared_ptr<TContext> context = std::atomic_load(&Context_);
         context->Logger->info("caught SIGUSR1 from {}", info.Sender());
+        ::sd_notify(0, "RELOADING=1");
         try {
-            ::sd_notify(0, "RELOADING=1");
             std::shared_ptr<TContext> newContext = ReloadContext();
             std::atomic_store(&Context_, newContext);
-            ::sd_notify(0, "READY=1");
             newContext->Logger->info("context reloaded");
+            ::sd_notify(0, "STATUS=Reload succesful");
         } catch (const std::exception& e) {
             context->Logger->error("context reload failed: {}", e.what());
+            ::sd_notify(0, "STATUS=Reload failed");
         }
+        ::sd_notify(0, "READY=1");
     });
 
     /* well, loop not started yet, but we're almost ready */
     ::sd_notify(0, "READY=1");
+    ::sd_notify(0, "STATUS=Started");
 }
