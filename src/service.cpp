@@ -2,6 +2,7 @@
 #include <deque>
 #include <exception>
 #include <functional>
+#include <systemd/sd-daemon.h>
 
 #include "service.h"
 #include "version.h"
@@ -136,6 +137,7 @@ void TService::StartConnection(TSocketHandlePtr listener, TSocketHandlePtr clien
 }
 
 void TService::Shutdown() {
+    ::sd_notify(0, "STOPPING=1");
     Context_->Logger->info("shutdown request");
     Loop_->Shutdown();
 }
@@ -158,8 +160,10 @@ void TService::Start() {
     Loop_->Signal(SIGUSR1, [this](TSignalInfo info) {
         Context_->Logger->info("caught SIGUSR1 from {}", info.Sender());
         try {
+            ::sd_notify(0, "RELOADING=1");
             std::shared_ptr<TServiceContext> newContext = ReloadContext();
             std::atomic_store(&Context_, newContext);
+            ::sd_notify(0, "READY=1");
             newContext->Logger->info("context reloaded");
         } catch (const std::exception& e) {
             Context_->Logger->error("context reload failed: {}", e.what());
@@ -169,4 +173,7 @@ void TService::Start() {
     Loop_->Cleanup([this]() {
         FinishedConnections_.clear();
     });
+
+    // Well, loop not started yet, but we're almost ready
+    ::sd_notify(0, "READY=1");
 }
