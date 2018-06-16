@@ -97,6 +97,9 @@ public:
         return Fd_ != -1;
     }
 
+    void ShutdownAll();
+    void ShutdownRead();
+    void ShutdownWrite();
     void Close();
 
     ~TSocketHandle();

@@ -35,13 +35,8 @@ public:
 
     TSocketAddress Resolve(const std::string& addr);
 
-    TSplicerPtr MakeSplicer(TSocketHandlePtr client, TSocketHandlePtr backend);
-    void FinishSplicer(TSplicer* splicer);
-    void Cleanup();
+    ~TContext();
 
 private:
-    std::deque<TSplicerPtr> ActiveSplicers_;
-    std::deque<TSplicerPtr> InactiveSplicers_;
-
     std::unordered_map<std::string, TSocketAddress> CachedAddrs_;
 };

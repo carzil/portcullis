@@ -6,7 +6,7 @@
 
 #include "service.h"
 #include "version.h"
-#include "python/module.h"
+#include "python/wrappers.h"
 
 using namespace std::placeholders;
 
@@ -46,7 +46,7 @@ std::shared_ptr<TContext> TService::ReloadContext() {
 
     py::object handlerModule = PyEvalFile(config.HandlerFile);
 
-    TContextPtr context(new TContext());
+    TContextPtr context = std::make_shared<TContext>();
     context->Config = config;
     context->HandlerClass = handlerModule["Handler"];
     context->HandlerModule = std::move(handlerModule);
@@ -71,10 +71,6 @@ std::shared_ptr<TContext> TService::ReloadContext() {
     } else {
         context->Listener = oldContext->Listener;
     }
-
-    context->Loop->Cleanup([context]() {
-        context->Cleanup();
-    });
 
     return context;
 }
@@ -104,17 +100,19 @@ void TService::Start() {
     });
 
     Loop_->Signal(SIGUSR1, [this](TSignalInfo info) {
-        std::shared_ptr<TContext> context = std::atomic_load(&Context_);
-        context->Logger->info("caught SIGUSR1 from {}", info.Sender());
         ::sd_notify(0, "RELOADING=1");
+        std::shared_ptr<TContext> oldContext = std::atomic_load(&Context_);
+        oldContext->Logger->info("caught SIGUSR1 from {}", info.Sender());
         try {
             std::shared_ptr<TContext> newContext = ReloadContext();
             std::atomic_store(&Context_, newContext);
+            /* clean python objects that hold old context */
+            py::module::import("gc").attr("collect")();
             newContext->Logger->info("context reloaded");
             ::sd_notify(0, "STATUS=Reload succesful");
         } catch (const std::exception& e) {
-            context->Logger->error("context reload failed: {}", e.what());
             ::sd_notify(0, "STATUS=Reload failed");
+            oldContext->Logger->error("context reload failed: {}", e.what());
         }
         ::sd_notify(0, "READY=1");
     });

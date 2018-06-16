@@ -1,3 +1,5 @@
+from portcullis import Splicer
+
 class Handler:
     def __init__(self, ctx, client):
         self.ctx = ctx
@@ -6,4 +8,8 @@ class Handler:
 
     def entry(self, backend):
         self.backend = backend
-        self.ctx.splice(self.client, self.backend)
+        self.splicer = Splicer(self.ctx, self.client, self.backend)
+        self.splicer.start(on_end=self.end)
+
+    def end(self):
+        pass

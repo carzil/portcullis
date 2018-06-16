@@ -21,10 +21,6 @@ void TSocketHandleWrapper::Close() {
     Handle_->Close();
 }
 
-TSplicerPtr TContextWrapper::Splice(TSocketHandleWrapper aWrapper, TSocketHandleWrapper bWrapper) {
-    return Context_->MakeSplicer(aWrapper.Handle(), bWrapper.Handle());
-}
-
 void TContextWrapper::Connect(std::string endpointString, py::object handler) {
     TSocketAddress endpoint = Context_->Resolve(endpointString);
     TSocketHandlePtr handle = Context_->Loop->MakeTcp();
