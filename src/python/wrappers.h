@@ -7,8 +7,6 @@
 #include "core/loop.h"
 #include "core/buffer.h"
 
-#include "shield/splicer.h"
-
 namespace py = pybind11;
 
 class TSocketHandleWrapper {
@@ -45,8 +43,11 @@ public:
         return TSocketHandleWrapper(Context_->Loop->MakeTcp());
     }
 
-    TSplicerPtr Splice(TSocketHandleWrapper in, TSocketHandleWrapper out);
     void Connect(std::string endpointString, py::object handler);
+
+    TContextPtr Get() {
+        return Context_;
+    }
 
 private:
     TContextPtr Context_ = nullptr;

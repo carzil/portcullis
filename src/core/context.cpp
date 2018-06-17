@@ -29,21 +29,6 @@ TSocketAddress TContext::Resolve(const std::string& addressString) {
     return addr;
 }
 
-TSplicerPtr TContext::MakeSplicer(TSocketHandlePtr client, TSocketHandlePtr backend) {
-    TSplicerPtr splicer(new TSplicer(shared_from_this(), std::move(client), std::move(backend)));
-    if (splicer->Id() >= ActiveSplicers_.size()) {
-        ActiveSplicers_.resize(splicer->Id() + 1);
-    }
-    ActiveSplicers_[splicer->Id()] = splicer;
-    return splicer;
-}
-
-void TContext::Cleanup() {
-    InactiveSplicers_.clear();
-}
-
-void TContext::FinishSplicer(TSplicer* splicer) {
-    TSplicerPtr ptr = ActiveSplicers_[splicer->Id()];
-    InactiveSplicers_.push_back(std::move(ptr));
-    ActiveSplicers_[splicer->Id()] = nullptr;
+TContext::~TContext() {
+    Logger->info("context destroyed");
 }

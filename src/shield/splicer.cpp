@@ -1,25 +1,35 @@
+#include <pybind11/pytypes.h>
+
 #include "core/context.h"
+#include "python/wrappers.h"
 #include "shield/splicer.h"
 
+namespace py = pybind11;
 
-TSplicer::TSplicer(TContextPtr context, TSocketHandlePtr client, TSocketHandlePtr backend)
-    : Context_(context)
-    , Client_(std::move(client))
-    , Backend_(std::move(backend))
+
+TSplicer::TSplicer(TContextWrapper context, TSocketHandleWrapper client, TSocketHandleWrapper backend)
+    : Context_(context.Get())
+    , Client_(client.Handle())
+    , Backend_(backend.Handle())
     , ClientBuffer_(new TSocketBuffer(4096))
     , BackendBuffer_(new TSocketBuffer(4096))
     , Id_(Client_->Fd())
 {
-    Transfer();
 }
 
 TSplicer::~TSplicer() {
-    Client_->Close();
-    Backend_->Close();
+    End();
 }
 
-void TSplicer::Transfer() {
-    Client_->Read(ClientBuffer_.get(), [this](TSocketHandlePtr, size_t, bool eof) {
+void TSplicer::Start(py::object onEndCb) {
+    if (Started_) {
+        throw TException() << "splicer already started";
+    }
+
+    OnEndCb_ = onEndCb;
+    Started_ = true;
+
+    Client_->Read(ClientBuffer_.get(), [this](TSocketHandlePtr, size_t bytesRead, bool eof) {
         if (eof) {
             End();
             return;
@@ -34,7 +44,7 @@ void TSplicer::Transfer() {
         });
     });
 
-    Backend_->Read(BackendBuffer_.get(), [this](TSocketHandlePtr, size_t, bool eof) {
+    Backend_->Read(BackendBuffer_.get(), [this](TSocketHandlePtr, size_t bytesRead, bool eof) {
         if (eof) {
             End();
             return;
@@ -51,5 +61,13 @@ void TSplicer::Transfer() {
 }
 
 void TSplicer::End() {
-    Context_->FinishSplicer(this);
+    Client_->ShutdownAll();
+    Backend_->ShutdownAll();
+    Client_->Close();
+    Backend_->Close();
+
+    if (!OnEndCb_.is_none()) {
+        OnEndCb_();
+        OnEndCb_ = py::none();
+    }
 }

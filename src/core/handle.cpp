@@ -136,6 +136,18 @@ void TSocketHandle::Close() {
     }
 }
 
+void TSocketHandle::ShutdownAll() {
+    ::shutdown(Fd_, SHUT_RDWR);
+}
+
+void TSocketHandle::ShutdownRead() {
+    ::shutdown(Fd_, SHUT_RD);
+}
+
+void TSocketHandle::ShutdownWrite() {
+    ::shutdown(Fd_, SHUT_WR);
+}
+
 void TSocketHandle::Bind(const TSocketAddress& addr) {
     int res = ::bind(Fd_, addr.AddressAs<const sockaddr>(), addr.Length());
     if (res < 0) {
