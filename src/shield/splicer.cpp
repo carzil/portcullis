@@ -7,13 +7,14 @@
 namespace py = pybind11;
 
 
-TSplicer::TSplicer(TContextWrapper context, TSocketHandleWrapper client, TSocketHandleWrapper backend)
+TSplicer::TSplicer(TContextWrapper context, TSocketHandleWrapper client, TSocketHandleWrapper backend, py::object onEndCb)
     : Context_(context.Get())
     , Client_(client.Handle())
     , Backend_(backend.Handle())
     , ClientBuffer_(new TSocketBuffer(4096))
     , BackendBuffer_(new TSocketBuffer(4096))
     , Id_(Client_->Fd())
+    , OnEndCb_(onEndCb)
 {
 }
 
@@ -21,42 +22,59 @@ TSplicer::~TSplicer() {
     End();
 }
 
-void TSplicer::Start(py::object onEndCb) {
+void TSplicer::Start() {
     if (Started_) {
         throw TException() << "splicer already started";
     }
 
-    OnEndCb_ = onEndCb;
     Started_ = true;
 
     Client_->Read(ClientBuffer_.get(), [this](TSocketHandlePtr, size_t bytesRead, bool eof) {
         if (eof) {
-            End();
-            return;
+            ClientEof_ = true;
+            if (BackendEof_) {
+                End();
+            } else {
+                Client_->StopRead();
+                Backend_->ShutdownWrite();
+            }
+        } else {
+            FlushClientBuffer();
         }
-
-        Client_->PauseRead();
-
-        Backend_->Write(ClientBuffer_->CurrentMemoryRegion(), [this](TSocketHandlePtr) {
-            ClientBuffer_->Reset();
-            Client_->RestartRead();
-            Backend_->RestartRead();
-        });
     });
 
     Backend_->Read(BackendBuffer_.get(), [this](TSocketHandlePtr, size_t bytesRead, bool eof) {
         if (eof) {
-            End();
-            return;
+            BackendEof_ = true;
+            if (ClientEof_) {
+                End();
+            } else {
+                Backend_->StopRead();
+                Client_->ShutdownWrite();
+            }
+        } else {
+            FlushBackendBuffer();
         }
+    });
+}
 
-        Backend_->PauseRead();
+void TSplicer::FlushClientBuffer() {
+    Client_->PauseRead();
 
-        Client_->Write(BackendBuffer_->CurrentMemoryRegion(), [this](TSocketHandlePtr) {
-            BackendBuffer_->Reset();
-            Backend_->RestartRead();
-            Client_->RestartRead();
-        });
+    Backend_->Write(ClientBuffer_->CurrentMemoryRegion(), [this](TSocketHandlePtr) {
+        ClientBuffer_->Reset();
+        Client_->RestartRead();
+        Backend_->RestartRead();
+    });
+}
+
+void TSplicer::FlushBackendBuffer() {
+    Backend_->PauseRead();
+
+    Client_->Write(BackendBuffer_->CurrentMemoryRegion(), [this](TSocketHandlePtr) {
+        BackendBuffer_->Reset();
+        Backend_->RestartRead();
+        Client_->RestartRead();
     });
 }
 

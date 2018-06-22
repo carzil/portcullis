@@ -13,18 +13,21 @@ class TSocketHandleWrapper;
 
 class TSplicer {
 public:
-    TSplicer(TContextWrapper context, TSocketHandleWrapper client, TSocketHandleWrapper backend);
+    TSplicer(TContextWrapper context, TSocketHandleWrapper client, TSocketHandleWrapper backend, py::object onEndCb);
     ~TSplicer();
 
     int Id() const {
         return Id_;
     }
 
-    void Start(py::object onEndCb);
+    void Start();
     void End();
 
-private:
+protected:
+    void FlushClientBuffer();
+    void FlushBackendBuffer();
 
+private:
     void Cleanup();
 
     TContextPtr Context_;
@@ -35,6 +38,9 @@ private:
     py::object OnEndCb_;
 
     bool Started_ = false;
+
+    bool ClientEof_ = false;
+    bool BackendEof_ = false;
 
     size_t Id_ = 0;
 };

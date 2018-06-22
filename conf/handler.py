@@ -8,8 +8,8 @@ class Handler:
 
     def entry(self, backend):
         self.backend = backend
-        self.splicer = Splicer(self.ctx, self.client, self.backend)
-        self.splicer.start(on_end=self.end)
+        self.splicer = Splicer(self.ctx, self.client, self.backend, self.end)
+        self.ctx.start_splicer(self.splicer)
 
     def end(self):
         pass

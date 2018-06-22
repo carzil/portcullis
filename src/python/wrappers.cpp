@@ -28,3 +28,7 @@ void TContextWrapper::Connect(std::string endpointString, py::object handler) {
         handler(TSocketHandleWrapper(std::move(handle)));
     });
 }
+
+void TContextWrapper::StartSplicer(TSplicerPtr splicer) {
+    Context_->StartSplicer(splicer);
+}

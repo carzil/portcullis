@@ -108,6 +108,10 @@ void TEventLoop::Close(int fd) {
     Handles_[fd] = nullptr;
 }
 
+void TEventLoop::Cancel(TCleanupHandle handle) {
+    CleanupHandlers_.erase(handle);
+}
+
 void TEventLoop::DoAccept(TSocketHandle* handle) {
     for (;;) {
         sockaddr_storage addr;

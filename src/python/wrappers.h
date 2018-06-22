@@ -44,6 +44,7 @@ public:
     }
 
     void Connect(std::string endpointString, py::object handler);
+    void StartSplicer(TSplicerPtr splicer);
 
     TContextPtr Get() {
         return Context_;

@@ -83,37 +83,60 @@ TSocketHandle::~TSocketHandle() {
 }
 
 void TSocketHandle::Listen(TAcceptHandler handler, int backlog) {
+    if (!Active()) {
+        return;
+    }
     AcceptHandler = std::move(handler);
     Loop_->Listen(this, backlog);
 }
 
 void TSocketHandle::Read(TSocketBuffer* readDest, TReadHandler handler) {
+    if (!Active()) {
+        return;
+    }
     ReadDestination = readDest;
     ReadHandler = std::move(handler);
     Loop_->StartRead(this);
 }
 
 void TSocketHandle::PauseRead() {
+    if (!Active()) {
+        return;
+    }
     Loop_->StopRead(this);
 }
 
 void TSocketHandle::RestartRead() {
-    Loop_->StartRead(this);
+    if (!Active()) {
+        return;
+    }
+    if (ReadHandler) {
+        Loop_->StartRead(this);
+    }
 }
 
 void TSocketHandle::Write(TMemoryRegionChain chain, TWriteHandler handler) {
+    if (!Active()) {
+        return;
+    }
     WriteChain = std::move(chain);
     WriteHandler = std::move(handler);
     Loop_->StartWrite(this);
 }
 
 void TSocketHandle::Connect(TSocketAddress endpoint, TConnectHandler handler) {
+    if (!Active()) {
+        return;
+    }
     ConnectHandler = std::move(handler);
     ConnectEndpoint = std::move(endpoint);
     Loop_->Connect(this);
 }
 
 void TSocketHandle::StopRead() {
+    if (!Active()) {
+        return;
+    }
     ReadHandler = nullptr;
     Loop_->StopRead(this);
 }
@@ -137,15 +160,21 @@ void TSocketHandle::Close() {
 }
 
 void TSocketHandle::ShutdownAll() {
-    ::shutdown(Fd_, SHUT_RDWR);
+    if (Active()) {
+        ::shutdown(Fd_, SHUT_RDWR);
+    }
 }
 
 void TSocketHandle::ShutdownRead() {
-    ::shutdown(Fd_, SHUT_RD);
+    if (Active()) {
+        ::shutdown(Fd_, SHUT_RD);
+    }
 }
 
 void TSocketHandle::ShutdownWrite() {
-    ::shutdown(Fd_, SHUT_WR);
+    if (Active()) {
+        ::shutdown(Fd_, SHUT_WR);
+    }
 }
 
 void TSocketHandle::Bind(const TSocketAddress& addr) {

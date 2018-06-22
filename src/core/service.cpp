@@ -72,6 +72,10 @@ std::shared_ptr<TContext> TService::ReloadContext() {
         context->Listener = oldContext->Listener;
     }
 
+    context->CleanupHandle = Loop_->Cleanup([context]() {
+        context->Cleanup();
+    });
+
     return context;
 }
 
@@ -108,6 +112,7 @@ void TService::Start() {
             std::atomic_store(&Context_, newContext);
             /* clean python objects that hold old context */
             py::module::import("gc").attr("collect")();
+            oldContext->Finalize();
             newContext->Logger->info("context reloaded");
             ::sd_notify(0, "STATUS=Reload succesful");
         } catch (const std::exception& e) {

@@ -29,6 +29,27 @@ TSocketAddress TContext::Resolve(const std::string& addressString) {
     return addr;
 }
 
+void TContext::Finalize() {
+    Loop->Cancel(CleanupHandle);
+}
+
+void TContext::Cleanup() {
+
+}
+
+void TContext::StartSplicer(TSplicerPtr splicer) {
+    if (splicer->Id() > ActiveSplicers_.size()) {
+        ActiveSplicers_.resize(splicer->Id() + 1);
+    }
+    ActiveSplicers_[splicer->Id()] = splicer;
+    splicer->Start();
+}
+
+void TContext::StopSplicer(TSplicerPtr splicer) {
+    FinishingSplicers_.push_back(splicer);
+    ActiveSplicers_[splicer->Id()] = nullptr;
+}
+
 TContext::~TContext() {
     Logger->info("context destroyed");
 }

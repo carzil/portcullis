@@ -8,6 +8,7 @@
 #include <vector>
 #include <atomic>
 #include <csignal>
+#include <list>
 
 #include "handle.h"
 
@@ -33,6 +34,8 @@ private:
 using TSignalHandler = std::function<void(TSignalInfo info)>;
 using TCleanupHandler = std::function<void()>;
 
+using TCleanupHandle = std::list<TCleanupHandler>::iterator;
+
 class TEventLoop {
 public:
     TEventLoop();
@@ -51,12 +54,15 @@ public:
 
     void Signal(int sig, TSignalHandler handler);
 
-    void Cleanup(TCleanupHandler handler) {
+    TCleanupHandle Cleanup(TCleanupHandler handler) {
         CleanupHandlers_.push_back(std::move(handler));
+        return std::next(CleanupHandlers_.end(), -1);
     }
 
     void RunForever();
     void Shutdown();
+
+    void Cancel(TCleanupHandle handle);
 
 private:
     int EpollOp(int op, int fd, int events);
@@ -75,5 +81,5 @@ private:
     int SignalFd_ = -1;
     sigset_t SignalsHandled_;
     std::vector<TSignalHandler> SignalHandlers_;
-    std::vector<TCleanupHandler> CleanupHandlers_;
+    std::list<TCleanupHandler> CleanupHandlers_;
 };

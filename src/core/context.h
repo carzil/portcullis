@@ -8,6 +8,7 @@
 
 #include "core/fwd.h"
 #include "core/handle.h"
+#include "core/loop.h"
 #include "shield/fwd.h"
 
 namespace py = pybind11;
@@ -32,11 +33,20 @@ public:
     py::object HandlerClass;
     py::object HandlerModule;
     TEventLoop* Loop = nullptr;
+    TCleanupHandle CleanupHandle;
 
     TSocketAddress Resolve(const std::string& addr);
+    void Finalize();
+
+    void StartSplicer(TSplicerPtr splicer);
+    void StopSplicer(TSplicerPtr splicer);
+
+    void Cleanup();
 
     ~TContext();
 
 private:
     std::unordered_map<std::string, TSocketAddress> CachedAddrs_;
+    std::vector<TSplicerPtr> ActiveSplicers_;
+    std::vector<TSplicerPtr> FinishingSplicers_;
 };
