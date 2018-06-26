@@ -2,13 +2,10 @@
 
 #include <stdio.h>
 
-#include <pybind11/eval.h>
-
 #include <deque>
 
 #include "core/loop.h"
 #include "core/resource.h"
-#include "core/utils.h"
 #include "core/context.h"
 
 namespace py = pybind11;

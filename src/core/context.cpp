@@ -1,5 +1,9 @@
+#include <pybind11/eval.h>
+
 #include "core/context.h"
 #include "shield/splicer.h"
+
+#include "util/python.h"
 
 
 TSocketAddress TContext::Resolve(const std::string& addressString) {
@@ -52,4 +56,19 @@ void TContext::StopSplicer(TSplicerPtr splicer) {
 
 TContext::~TContext() {
     Logger->info("context destroyed");
+}
+
+TConfig ReadConfigFromFile(std::string filename) {
+    TConfig config;
+    py::object pyConfig = PyEvalFile(filename);
+    config.Name = pyConfig["name"].cast<std::string>();
+    config.Host = pyConfig["host"].cast<std::string>();
+    config.Port = pyConfig["port"].cast<std::string>();
+    config.Backlog = pyConfig["backlog"].cast<size_t>();
+    config.HandlerFile = pyConfig["handler_file"].cast<std::string>();
+    config.BackendHost = pyConfig["backend_host"].cast<std::string>();
+    config.BackendPort = pyConfig["backend_port"].cast<std::string>();
+    config.Protocol = pyConfig["protocol"].cast<std::string>();
+    config.Managed = pyConfig["managed"].cast<bool>();
+    return config;
 }

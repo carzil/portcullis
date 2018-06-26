@@ -19,8 +19,13 @@ struct TConfig {
 
     std::string Host;
     std::string Port;
-
     size_t Backlog = 0;
+
+    bool Managed = false;
+    std::string Protocol;
+
+    std::string BackendHost;
+    std::string BackendPort;
 };
 
 class TSplicer;
@@ -34,6 +39,7 @@ public:
     py::object HandlerModule;
     TEventLoop* Loop = nullptr;
     TCleanupHandle CleanupHandle;
+    TSocketAddress BackendAddr;
 
     TSocketAddress Resolve(const std::string& addr);
     void Finalize();
@@ -50,3 +56,5 @@ private:
     std::vector<TSplicerPtr> ActiveSplicers_;
     std::vector<TSplicerPtr> FinishingSplicers_;
 };
+
+TConfig ReadConfigFromFile(std::string filename);

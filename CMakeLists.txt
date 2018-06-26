@@ -64,12 +64,13 @@ set(SOURCES
     src/core/loop.cpp
     src/core/resource.cpp
     src/core/service.cpp
-    src/core/utils.cpp
     src/core/context.cpp
     src/main.cpp
     src/python/wrappers.cpp
     src/python/module.cpp
     src/shield/splicer.cpp
+    src/util/python.cpp
+    src/util/generic.cpp
 )
 
 add_library(picohttpparser STATIC libs/picohttpparser/picohttpparser.c)

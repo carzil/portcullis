@@ -1,6 +1,6 @@
 #include <unistd.h>
 #include <linux/limits.h>
-#include "utils.h"
+#include "util/generic.h"
 
 std::string AbsPath(const std::string& path) {
     char resolved[PATH_MAX];

@@ -7,7 +7,7 @@
 #include <fcntl.h>
 
 #include "buffer.h"
-#include "exception.h"
+#include "util/exception.h"
 
 class TEventLoop;
 class TSocketHandle;

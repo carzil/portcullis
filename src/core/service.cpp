@@ -7,15 +7,9 @@
 #include "service.h"
 #include "version.h"
 #include "python/wrappers.h"
+#include "util/python.h"
 
 using namespace std::placeholders;
-
-static py::object PyEvalFile(const std::string& path) {
-    py::object module = py::dict();
-    module["__builtins__"] = PyEval_GetBuiltins();
-    py::eval_file(path, module);
-    return module;
-}
 
 TService::TService(TEventLoop* loop, const std::string& configPath)
     : Loop_(loop)
@@ -35,14 +29,15 @@ std::shared_ptr<TContext> TService::ReloadContext() {
 
     logger->info("loading config from file {}", AbsPath(ConfigPath_));
 
-    py::object pyConfig = PyEvalFile(ConfigPath_);
+    TConfig config = ReadConfigFromFile(ConfigPath_);
 
-    TConfig config;
-    config.Name = pyConfig["name"].cast<std::string>();
-    config.Host = pyConfig["host"].cast<std::string>();
-    config.Port = pyConfig["port"].cast<std::string>();
-    config.Backlog = pyConfig["backlog"].cast<size_t>();
-    config.HandlerFile = pyConfig["handler_file"].cast<std::string>();
+    if (!config.Managed) {
+        throw TException() << "umanaged handlers are not supported yet";
+    }
+
+    if (config.Protocol != "tcp") {
+        throw TException() << "only TCP handlers are supported";
+    }
 
     py::object handlerModule = PyEvalFile(config.HandlerFile);
 
@@ -53,21 +48,32 @@ std::shared_ptr<TContext> TService::ReloadContext() {
     context->Logger = logger;
     context->Loop = Loop_;
 
-    std::vector<TSocketAddress> addrs = GetAddrInfo(context->Config.Host, context->Config.Port, true, "tcp");
+    context->BackendAddr = GetAddrInfo(
+        context->Config.BackendHost,
+        context->Config.BackendPort,
+        false,
+        context->Config.Protocol
+    )[0];
 
-    if (!oldContext || (oldContext->Listener->Address() != addrs[0])) {
+    TSocketAddress listeningAddress = GetAddrInfo(context->Config.Host, context->Config.Port, true, "tcp")[0];
+
+    if (!oldContext || (oldContext->Listener->Address() != listeningAddress)) {
         context->Listener = Loop_->MakeTcp();
         context->Listener->ReuseAddr();
-        context->Listener->Bind(addrs[0]);
+        context->Listener->Bind(listeningAddress);
         context->Listener->Listen([this](TSocketHandlePtr, TSocketHandlePtr accepted) {
             TContextPtr context = std::atomic_load(&Context_);
-            context->HandlerClass(
-                TContextWrapper(std::move(context)),
-                TSocketHandleWrapper(std::move(accepted))
-            );
+            TSocketHandlePtr backend = context->Loop->MakeTcp();
+            backend->Connect(context->BackendAddr, [accepted, context](TSocketHandlePtr backend) {
+                context->HandlerClass(
+                    TContextWrapper(std::move(context)),
+                    TSocketHandleWrapper(std::move(accepted)),
+                    TSocketHandleWrapper(std::move(backend))
+                );
+            });
         }, context->Config.Backlog);
 
-        context->Logger->info("listening on {}:{}", addrs[0].Host(), addrs[0].Port());
+        context->Logger->info("listening on {}:{}", listeningAddress.Host(), listeningAddress.Port());
     } else {
         context->Listener = oldContext->Listener;
     }
