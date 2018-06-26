@@ -4,3 +4,6 @@
 [submodule "libs/spdlog"]
 	path = libs/spdlog
 	url = https://github.com/gabime/spdlog.git
+[submodule "libs/picohttpparser"]
+	path = libs/picohttpparser
+	url = https://github.com/h2o/picohttpparser.git

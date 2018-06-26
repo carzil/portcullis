@@ -72,6 +72,8 @@ set(SOURCES
     src/shield/splicer.cpp
 )
 
+add_library(picohttpparser STATIC libs/picohttpparser/picohttpparser.c)
+
 set_source_files_properties(${GENERATED_RESOURCES} PROPERTIES GENERATED TRUE)
 add_executable(portcullis ${SOURCES} ${GENERATED_RESOURCES})
-target_link_libraries(portcullis PRIVATE ${PYTHON_LIBRARIES} pybind11::embed spdlog systemd ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(portcullis PRIVATE ${PYTHON_LIBRARIES} pybind11::embed spdlog systemd ${CMAKE_THREAD_LIBS_INIT} picohttpparser)
