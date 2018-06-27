@@ -26,7 +26,13 @@ int main(int argc, char** argv) {
     logger->info("running Portcullis (v{}, git@{})", PORTCULLIS_VERSION, PORTCULLIS_GIT_COMMIT);
 
     TService handler(&loop, argv[1]);
-    handler.Start();
+
+    try {
+        handler.Start();
+    } catch (const std::exception& e) {
+        logger->critical("cannot start: {}", e.what());
+        return 1;
+    }
 
     loop.RunForever();
 

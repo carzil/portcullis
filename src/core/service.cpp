@@ -8,6 +8,7 @@
 #include "version.h"
 #include "python/wrappers.h"
 #include "util/python.h"
+#include "shield/splicer.h"
 
 using namespace std::placeholders;
 
@@ -15,11 +16,6 @@ TService::TService(TEventLoop* loop, const std::string& configPath)
     : Loop_(loop)
     , ConfigPath_(configPath)
 {
-    std::shared_ptr<TContext> context = ReloadContext();
-    atomic_store(&Context_, context);
-
-    /* import portcullis module to initialize binding of C++ wrappers */
-    py::module::import("portcullis");
 }
 
 std::shared_ptr<TContext> TService::ReloadContext() {
@@ -30,14 +26,6 @@ std::shared_ptr<TContext> TService::ReloadContext() {
     logger->info("loading config from file {}", AbsPath(ConfigPath_));
 
     TConfig config = ReadConfigFromFile(ConfigPath_);
-
-    if (!config.Managed) {
-        throw TException() << "umanaged handlers are not supported yet";
-    }
-
-    if (config.Protocol != "tcp") {
-        throw TException() << "only TCP handlers are supported";
-    }
 
     py::object handlerModule = PyEvalFile(config.HandlerFile);
 
@@ -62,15 +50,7 @@ std::shared_ptr<TContext> TService::ReloadContext() {
         context->Listener->ReuseAddr();
         context->Listener->Bind(listeningAddress);
         context->Listener->Listen([this](TSocketHandlePtr, TSocketHandlePtr accepted) {
-            TContextPtr context = std::atomic_load(&Context_);
-            TSocketHandlePtr backend = context->Loop->MakeTcp();
-            backend->Connect(context->BackendAddr, [accepted, context](TSocketHandlePtr backend) {
-                context->HandlerClass(
-                    TContextWrapper(std::move(context)),
-                    TSocketHandleWrapper(std::move(accepted)),
-                    TSocketHandleWrapper(std::move(backend))
-                );
-            });
+            StartHandler(std::move(accepted));
         }, context->Config.Backlog);
 
         context->Logger->info("listening on {}:{}", listeningAddress.Host(), listeningAddress.Port());
@@ -93,6 +73,12 @@ void TService::Shutdown() {
 }
 
 void TService::Start() {
+    std::shared_ptr<TContext> context = ReloadContext();
+    atomic_store(&Context_, context);
+
+    /* import portcullis module to initialize binding of C++ wrappers */
+    py::module::import("portcullis");
+
     if (!Context_) {
         return;
     }
@@ -131,4 +117,17 @@ void TService::Start() {
     /* well, loop not started yet, but we're almost ready */
     ::sd_notify(0, "READY=1");
     ::sd_notify(0, "STATUS=Started");
+}
+
+void TService::StartHandler(TSocketHandlePtr accepted) {
+    TContextPtr context = std::atomic_load(&Context_);
+    try {
+        context->HandlerClass(
+            TContextWrapper(context),
+            TSocketHandleWrapper(accepted)
+        );
+    } catch (const std::exception& e) {
+        context->Logger->error("failed to create handler: {}", e.what());
+        accepted->Close();
+    }
 }

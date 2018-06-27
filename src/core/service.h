@@ -16,7 +16,7 @@ public:
     void Start();
     void Shutdown();
 
-    void StartConnection(TSocketHandlePtr listener, TSocketHandlePtr client);
+    void StartHandler(TSocketHandlePtr accepted);
 
 private:
     std::shared_ptr<TContext> ReloadContext();

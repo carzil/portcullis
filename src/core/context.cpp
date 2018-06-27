@@ -55,20 +55,26 @@ void TContext::StopSplicer(TSplicerPtr splicer) {
 }
 
 TContext::~TContext() {
-    Logger->info("context destroyed");
+}
+
+template <typename T>
+static inline T ReadFromConfig(py::object pyConfig, const std::string& key) {
+    if (!pyConfig.contains(key)) {
+        throw TException() << "'" << key << "' is not set in config";
+    }
+    return pyConfig[key.c_str()].cast<T>();
 }
 
 TConfig ReadConfigFromFile(std::string filename) {
     TConfig config;
     py::object pyConfig = PyEvalFile(filename);
-    config.Name = pyConfig["name"].cast<std::string>();
-    config.Host = pyConfig["host"].cast<std::string>();
-    config.Port = pyConfig["port"].cast<std::string>();
-    config.Backlog = pyConfig["backlog"].cast<size_t>();
-    config.HandlerFile = pyConfig["handler_file"].cast<std::string>();
-    config.BackendHost = pyConfig["backend_host"].cast<std::string>();
-    config.BackendPort = pyConfig["backend_port"].cast<std::string>();
-    config.Protocol = pyConfig["protocol"].cast<std::string>();
-    config.Managed = pyConfig["managed"].cast<bool>();
+    config.Name = ReadFromConfig<std::string>(pyConfig, "name");
+    config.Host = ReadFromConfig<std::string>(pyConfig, "host");
+    config.Port = ReadFromConfig<std::string>(pyConfig, "port");
+    config.Backlog = ReadFromConfig<size_t>(pyConfig, "backlog");
+    config.HandlerFile = ReadFromConfig<std::string>(pyConfig, "handler_file");
+    config.BackendHost = ReadFromConfig<std::string>(pyConfig, "backend_host");
+    config.BackendPort = ReadFromConfig<std::string>(pyConfig, "backend_port");
+    config.Protocol = ReadFromConfig<std::string>(pyConfig, "protocol");
     return config;
 }

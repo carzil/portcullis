@@ -21,7 +21,6 @@ struct TConfig {
     std::string Port;
     size_t Backlog = 0;
 
-    bool Managed = false;
     std::string Protocol;
 
     std::string BackendHost;
