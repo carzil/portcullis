@@ -27,7 +27,7 @@ def main():
     name = config['name']
     port = config['port']
     backend_port = config['backend_port']
-    backend_ip = config['backend_ip']
+    backend_host = config['backend_host']
 
     action_flag = {
         'add': '-A',
@@ -36,7 +36,7 @@ def main():
 
     cmd_str = (
         f'/sbin/iptables -t nat {action_flag} PREROUTING -p tcp '
-        f'--dport {port} -j DNAT --to-destination {backend_ip}:{backend_port} '
+        f'--dport {port} -j DNAT --to-destination {backend_host}:{backend_port} '
         f'-m comment --comment "Portcullis port forward for service {name}"'
     )
     cmd = shlex.split(cmd_str)

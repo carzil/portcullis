@@ -10,3 +10,18 @@ make
 ```
 portcullis <path-to-config>
 ```
+
+# How to run Portcullis UI
+```
+# dev
+cd admin
+FLASK_ENV=development flask run
+cd ../ui
+npm run dev
+
+# prod
+cd ui
+npm run build
+cd ../admin
+flask run -h 0.0.0.0
+```
