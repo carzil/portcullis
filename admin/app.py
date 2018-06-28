@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import glob
 import os
 import subprocess
 import tempfile
@@ -21,17 +22,32 @@ class Service(object):
     name: str
     config: str
     handler: str
+    proxying: bool = False
+
+    def __attrs_post_init__(self):
+        self.proxying = self.is_alive()
+        print(self.name, self.proxying)
 
     def start(self):
         self._save_files()
-        self._run_systemctl('start')
+        if not self.proxying:
+            self._run_systemctl('start')
+            self.proxying = True
 
     def stop(self):
-        self._run_systemctl('stop')
+        if self.proxying:
+            self._run_systemctl('stop')
+        self.proxying = False
 
     def reload(self):
         self._save_files()
-        self._run_systemctl('reload')
+        if self.proxying:
+            self._run_systemctl('reload')
+            # TODO: check for reload failed
+
+    def is_alive(self):
+        # checks exit code of systemctl status
+        return not bool(self._run_systemctl('status'))
 
     def _save_files(self):
         if not os.path.isdir(PORTCULLIS_WORK_DIR):
@@ -44,7 +60,7 @@ class Service(object):
         atomic_write(f'{PORTCULLIS_WORK_DIR}/{self.name}.handler.py', self.handler)
 
     def _run_systemctl(self, cmd):
-        subprocess.call([
+        return subprocess.call([
             'systemctl', '--user', cmd, f'portcullis@{self.name}.service'
         ])
 
@@ -53,10 +69,29 @@ app = Flask(__name__)
 services = {}
 
 
+def on_load():
+    global services
+    configs = glob.glob(os.path.join(PORTCULLIS_WORK_DIR, '*.config.py'))
+    for fname in configs:
+        try:
+            fname = fname[fname.rindex('/') + 1:]
+            name = fname[:fname.index('.')]
+            config = open(f'{PORTCULLIS_WORK_DIR}/{name}.config.py').read()
+            handler = open(f'{PORTCULLIS_WORK_DIR}/{name}.handler.py').read()
+            service = Service(name, config, handler)
+            print(service)
+            services[name] = service
+        except Exception:
+            import logging
+            logging.exception('fuck')
+
+on_load()
+
+
 @app.route('/')
 @app.route('/dist/build.js')
 @app.route('/dist/build.js.map')
-def serveStaticFile():
+def serve_static():
     files = {
         '/': 'index.html',
         '/dist/build.js': 'build.js',
@@ -68,12 +103,12 @@ def serveStaticFile():
 
 
 @app.route('/api/services')
-def listServices():
+def services_list():
     return jsonify(sorted(services.keys()))
 
 
 @app.route('/api/services/<name>', methods=['GET', 'POST', 'DELETE'])
-def service(name):
+def service_action(name):
     global services
     if request.method == 'GET':
         assert name in services
@@ -81,9 +116,15 @@ def service(name):
     elif request.method == 'POST':
         data = request.get_json()
         if name in services:
-            services[name].config = data['config']
-            services[name].handler = data['handler']
-            services[name].reload()
+            if 'proxying' in data:
+                if data['proxying']:
+                    services[name].start()
+                else:
+                    services[name].stop()
+            else:
+                services[name].config = data['config']
+                services[name].handler = data['handler']
+                services[name].reload()
         else:
             serv = Service(name, data['config'], data['handler'])
             services[name] = serv

@@ -20,7 +20,9 @@
       </b-collapse>
     </b-navbar>
     <b-container fluid class="fullbleed">
-      <router-view @loading="setLoading(true)" @loaded="setLoading(false)">
+      <router-view @loading="setLoading(true)"
+                   @loaded="setLoading(false)"
+                   @updateServices="updateServices">
       </router-view>
     </b-container>
 
@@ -89,8 +91,6 @@
             })
      },
      newService () {
-       if (!this.forms.backendIp) return
-
        let that = this
        let handler = `from portcullis import Splicer
 
@@ -125,13 +125,13 @@
          }))
        }
 
-       if (this.forms.services) {
+       if (this.forms.tabIndex == 0) {
          let services = this.forms.services.match(/[^\r\n]+/g)
          for (let s of services) {
            let [name, port] = s.split(':')
            addPost(name, port)
          }
-       } else if (this.forms.name && this.forms.port) {
+       } else if (this.forms.tabIndex == 1) {
          addPost(this.forms.name, this.forms.port)
        } else {
          return

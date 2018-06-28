@@ -1,19 +1,16 @@
 <template>
   <div class="fullbleed">
     <b-row class="fullbleed">
-      <b-col cols="2">
+      <b-col cols="2" style="margin-top: 10px;">
         <b-list-group>
-          <b-list-group-item button @click="save('prestable')">
-            Save to prestable
-          </b-list-group-item>
-          <b-list-group-item button @click="save('prod')">
-            Save to prod
+          <b-list-group-item button @click="save" variant="success">
+            Save
           </b-list-group-item>
           <b-list-group-item button @click="toggleProxying">
             {{ proxying ? 'Disable' : 'Enable' }} proxying
           </b-list-group-item>
-          <b-list-group-item button @click="undo">
-            Undo
+          <b-list-group-item button @click="deleteMe" variant="danger">
+            Delete
           </b-list-group-item>
         </b-list-group>
       </b-col>
@@ -69,27 +66,41 @@
             .then((response) => {
               that.config = response.data.config
               that.handler = response.data.handler
+              that.proxying = response.data.proxying
               that.$emit('loaded')
             }, (error) => {
               that.$router.push('/')
             })
      },
-     save (target) {
-       this.loading = true
-       let that = this
-       axios.post('/api/services/' + this.name, {
+     save () {
+       this.postData({
          config: this.config,
          handler: this.handler
        })
-            .then((response) => {
-              that.$emit('loaded')
-            })
      },
      toggleProxying () {
        this.proxying ^= true
+       this.postData({ proxying: this.proxying })
      },
-     undo () {
-       console.log('undo')
+     deleteMe () {
+       if (confirm(`Are you sure you want to delete service ${this.name}?!!1`)) {
+         this.$emit('loading')
+         let that = this
+         axios.delete('/api/services/' + this.name)
+              .then((response) => {
+                that.$emit('loaded')
+                that.$emit('updateServices')
+                that.$router.push('/')
+              })
+       }
+     },
+     postData (data) {
+       this.$emit('loading')
+       let that = this
+       axios.post('/api/services/' + this.name, data)
+            .then((response) => {
+              that.$emit('loaded')
+            })
      }
    },
    components: { AceEditor }
