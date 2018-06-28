@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import glob
+import logging
 import os
 import subprocess
 import tempfile
@@ -26,7 +27,6 @@ class Service(object):
 
     def __attrs_post_init__(self):
         self.proxying = self.is_alive()
-        print(self.name, self.proxying)
 
     def start(self):
         self._save_files()
@@ -38,6 +38,8 @@ class Service(object):
         if self.proxying:
             self._run_systemctl('stop')
         self.proxying = False
+        os.remove(f'{PORTCULLIS_WORK_DIR}/{self.name}.config.py')
+        os.remove(f'{PORTCULLIS_WORK_DIR}/{self.name}.handler.py')
 
     def reload(self):
         self._save_files()
@@ -61,8 +63,8 @@ class Service(object):
 
     def _run_systemctl(self, cmd):
         return subprocess.call([
-            'systemctl', '--user', cmd, f'portcullis@{self.name}.service'
-        ])
+            'systemctl', '--user', '--quiet', cmd, f'portcullis@{self.name}.service'
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 app = Flask(__name__)
@@ -79,10 +81,9 @@ def on_load():
             config = open(f'{PORTCULLIS_WORK_DIR}/{name}.config.py').read()
             handler = open(f'{PORTCULLIS_WORK_DIR}/{name}.handler.py').read()
             service = Service(name, config, handler)
-            print(service)
+            print('Loaded', service.name, 'active', service.proxying)
             services[name] = service
         except Exception:
-            import logging
             logging.exception('fuck')
 
 on_load()
@@ -104,7 +105,7 @@ def serve_static():
 
 @app.route('/api/services')
 def services_list():
-    return jsonify(sorted(services.keys()))
+    return jsonify([attr.asdict(v) for v in services.values()])
 
 
 @app.route('/api/services/<name>', methods=['GET', 'POST', 'DELETE'])

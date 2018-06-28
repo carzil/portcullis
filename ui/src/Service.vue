@@ -81,6 +81,7 @@
      toggleProxying () {
        this.proxying ^= true
        this.postData({ proxying: this.proxying })
+       this.$emit('updateServices')
      },
      deleteMe () {
        if (confirm(`Are you sure you want to delete service ${this.name}?!!1`)) {

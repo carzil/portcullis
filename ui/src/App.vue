@@ -9,8 +9,8 @@
       <b-navbar-brand href="#">Portcullis</b-navbar-brand>
       <b-collapse is-nav id="nav_collapse">
         <b-navbar-nav>
-          <b-nav-item href="#" v-for="s in services" :key="s" :to="s">
-            {{ s }}
+          <b-nav-item href="#" v-for="s in services" :key="s.name" :to="s.name">
+            {{ s.name }} <b-badge :variant="s.proxying ? 'success' : 'danger'">&nbsp;&nbsp;</b-badge>
           </b-nav-item>
         </b-navbar-nav>
 
@@ -68,7 +68,7 @@
    data () {
      return {
        loading: true,
-       services: [],
+       services: {},
        forms: {
          tabIndex: 0,
          backendIp: '',
@@ -102,8 +102,9 @@
                               self.splicer = Splicer(self.ctx, self.client, self.backend, self.end)
                               self.ctx.start_splicer(self.splicer)
 
-                      def end(self):
-                          pass`
+                          def end(self):
+                              pass
+                      `
        handler = handler.replace(/^ {21}/gm, '')
 
        let promises = []
@@ -117,7 +118,8 @@
                        managed = True
                        protocol = "tcp"
                        backend_host = "${that.forms.backendIp}"
-                       backend_port = "${port}"`
+                       backend_port = "${port}"
+                       `
          config = config.replace(/^ +/gm, '')
          promises.push(axios.post('/api/services/' + name, {
            config: config,
