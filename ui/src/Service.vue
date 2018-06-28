@@ -81,7 +81,6 @@
      toggleProxying () {
        this.proxying ^= true
        this.postData({ proxying: this.proxying })
-       this.$emit('updateServices')
      },
      deleteMe () {
        if (confirm(`Are you sure you want to delete service ${this.name}?!!1`)) {
@@ -101,6 +100,7 @@
        axios.post('/api/services/' + this.name, data)
             .then((response) => {
               that.$emit('loaded')
+              this.$emit('updateServices')
             })
      }
    },

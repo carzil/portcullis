@@ -10,7 +10,7 @@
       <b-collapse is-nav id="nav_collapse">
         <b-navbar-nav>
           <b-nav-item href="#" v-for="s in services" :key="s.name" :to="s.name">
-            {{ s.name }} <b-badge :variant="s.proxying ? 'success' : 'danger'">&nbsp;&nbsp;</b-badge>
+            {{ s.name }} <b-badge pill :variant="s.proxying ? 'success' : 'danger'">&nbsp;</b-badge>
           </b-nav-item>
         </b-navbar-nav>
 
