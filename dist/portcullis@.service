@@ -5,6 +5,6 @@ Description=Portcullis proxy, service %i
 Type=notify
 
 WorkingDirectory=%h/portcullis/build
-ExecStart=%h/portcullis/build/portcullis ../conf/%i.py
+ExecStart=%h/portcullis/build/portcullis %t/portcullis/%i.config.py
 ExecReload=/bin/kill -USR1 $MAINPID
 Restart=on-failure

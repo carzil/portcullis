@@ -15,7 +15,7 @@ portcullis <path-to-config>
 ```
 # dev
 cd admin
-FLASK_ENV=development flask run
+FLASK_DEBUG=1 flask run
 cd ../ui
 npm run dev
 

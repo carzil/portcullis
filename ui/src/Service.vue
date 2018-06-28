@@ -69,7 +69,7 @@
      getServiceInfo() {
        this.loading = true
        let that = this
-       axios.get('/api/service?name=' + this.service)
+       axios.get('/api/services/' + this.service)
             .then(function (response) {
               that.config = response.data.config
               that.handler = response.data.handler

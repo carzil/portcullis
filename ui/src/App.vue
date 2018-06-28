@@ -76,20 +76,75 @@
      }
    },
    mounted () {
-     let that = this
-     axios.get('/api/services')
-          .then(function (response) {
-            that.services = response.data
-            that.loading = false
-          })
+     this.updateServices()
    },
    methods: {
+     updateServices () {
+       let that = this
+       axios.get('/api/services')
+            .then(function (response) {
+              that.services = response.data
+              that.loading = false
+            })
+     },
      newService () {
+       if (!this.forms.backendIp) return
+
+       let that = this
+       let handler = `from portcullis import Splicer
+
+                      class Handler:
+                          def __init__(self, ctx, client, backend):
+                              self.ctx = ctx
+                              self.client = client
+                              self.backend = backend
+                              self.splicer = Splicer(self.ctx, self.client, self.backend, self.end)
+                              self.ctx.start_splicer(self.splicer)
+
+                      def end(self):
+                          pass`
+       handler = handler.replace(/^ {21}/gm, '')
+
+       let promises = []
+
+       function addPost (name, port) {
+         let config = `name = "${name}"
+                       host = "localhost"
+                       port = "${port}"
+                       backlog = 128
+                       handler_file = "$WORK_DIR/${name}.handler.py"
+                       managed = True
+                       protocol = "tcp"
+                       backend_host = "${that.forms.backendIp}"
+                       backend_port = "${port}"`
+         config = config.replace(/^ +/gm, '')
+         promises.push(axios.post('/api/services/' + name, {
+           config: config,
+           handler: handler
+         }))
+       }
+
+       if (this.forms.services) {
+         let services = this.forms.services.match(/[^\r\n]+/g)
+         for (let s of services) {
+           let [name, port] = s.split(':')
+           addPost(name, port)
+         }
+       } else if (this.forms.name && this.forms.port) {
+         addPost(this.forms.name, this.forms.port)
+       } else {
+         return
+       }
+
+       axios.all(promises)
+            .then(axios.spread(function (acct, perms) {
+              that.updateServices()
+            }))
      },
      resetForms () {
-       this.forms.services = ''
-       this.forms.name = ''
-       this.forms.port = ''
+       /* this.forms.services = ''
+        * this.forms.name = ''
+        * this.forms.port = '' */
        /* this.forms.backendIp = '' */
      }
    }
