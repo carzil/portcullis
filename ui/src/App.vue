@@ -1,5 +1,8 @@
 <template>
   <div id="app">
+    <div v-if="loading" id="loader">
+      Loading...
+    </div>
     <b-navbar toggleable="md" type="dark" variant="info">
       <b-navbar-toggle target="nav_collapse"></b-navbar-toggle>
 
@@ -17,10 +20,8 @@
       </b-collapse>
     </b-navbar>
     <b-container fluid class="fullbleed">
-      <div v-if="loading">
-        Loading...
-      </div>
-      <router-view></router-view>
+      <router-view @loading="setLoading(true)" @loaded="setLoading(false)">
+      </router-view>
     </b-container>
 
     <b-modal id="new-service" title="New service"
@@ -146,6 +147,9 @@
         * this.forms.name = ''
         * this.forms.port = '' */
        /* this.forms.backendIp = '' */
+     },
+     setLoading (arg) {
+       this.loading = arg
      }
    }
  }
@@ -160,5 +164,29 @@
  }
  .fullbleed {
    height: 100%;
+ }
+ #loader {
+   position: fixed;
+   width: 100%;
+   height: 100%;
+   top: 0;
+   left: 0;
+   right: 0;
+   bottom: 0;
+   background-color: rgba(0,0,0,0.5);
+   z-index: 100;
+
+   display: -webkit-flexbox;
+   display: -ms-flexbox;
+   display: -webkit-flex;
+   display: flex;
+   -webkit-flex-align: center;
+   -ms-flex-align: center;
+   -webkit-align-items: center;
+   align-items: center;
+   justify-content: center;
+
+   font-size: 40px;
+   color: #eee;
  }
 </style>

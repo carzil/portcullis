@@ -1,9 +1,6 @@
 <template>
   <div class="fullbleed">
-    <b-row class="fullbleed" v-if="loading">
-      Loading...
-    </b-row>
-    <b-row class="fullbleed" v-if="!loading">
+    <b-row class="fullbleed">
       <b-col cols="2">
         <b-list-group>
           <b-list-group-item button @click="save('prestable')">
@@ -46,8 +43,7 @@
      return {
        config: '',
        handler: '',
-       proxying: true,
-       loading: true
+       proxying: true
      }
    },
    beforeRouteEnter (to, from, next) {
@@ -56,7 +52,7 @@
      })
    },
    computed: {
-     service () {
+     name () {
        return this.$route.params.service
      }
    },
@@ -67,17 +63,27 @@
    },
    methods: {
      getServiceInfo() {
-       this.loading = true
+       this.$emit('loading')
        let that = this
-       axios.get('/api/services/' + this.service)
-            .then(function (response) {
+       axios.get('/api/services/' + this.name)
+            .then((response) => {
               that.config = response.data.config
               that.handler = response.data.handler
-              that.loading = false
+              that.$emit('loaded')
+            }, (error) => {
+              that.$router.push('/')
             })
      },
      save (target) {
-       console.log(target)
+       this.loading = true
+       let that = this
+       axios.post('/api/services/' + this.name, {
+         config: this.config,
+         handler: this.handler
+       })
+            .then((response) => {
+              that.$emit('loaded')
+            })
      },
      toggleProxying () {
        this.proxying ^= true

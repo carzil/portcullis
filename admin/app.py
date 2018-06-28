@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import os
-import shutil
 import subprocess
 import tempfile
 
@@ -11,10 +10,10 @@ from flask import Flask, request, send_file, jsonify
 PORTCULLIS_WORK_DIR = os.path.join(os.environ.get('XDG_RUNTIME_DIR'), 'portcullis')
 
 def atomic_write(fname, data):
-    fp = tempfile.NamedTemporaryFile()
+    fp = tempfile.NamedTemporaryFile(prefix=PORTCULLIS_WORK_DIR, delete=False)
     fp.write(data.encode('utf8'))
     fp.flush()
-    shutil.move(fp.name, fname)
+    os.rename(fp.name, fname)
     # no need to remove fp
 
 @attr.s(auto_attribs=True, hash=True)
