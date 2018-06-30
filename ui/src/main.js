@@ -8,9 +8,10 @@ import 'bootstrap-vue/dist/bootstrap-vue.css'
 
 import App from './App.vue'
 import Service from './Service.vue'
+import './bus_events.js'
 
 Vue.use(VueRouter)
-Vue.use(BootstrapVue);
+Vue.use(BootstrapVue)
 Vue.use(Navbar);
 Vue.use(Layout);
 
@@ -24,7 +25,6 @@ const routes = [
 const router = new VueRouter({
   routes
 })
-
 
 const app = new Vue({
   el: '#app',

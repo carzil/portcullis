@@ -105,7 +105,9 @@ def serve_static():
 
 @app.route('/api/services')
 def services_list():
-    return jsonify([attr.asdict(v) for v in services.values()])
+    data = [attr.asdict(v) for v in services.values()]
+    data.sort(key=lambda s: s['name'])
+    return jsonify(data)
 
 
 @app.route('/api/services/<name>', methods=['GET', 'POST', 'DELETE'])

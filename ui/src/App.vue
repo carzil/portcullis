@@ -15,15 +15,25 @@
         </b-navbar-nav>
 
         <b-navbar-nav class="ml-auto">
-          <b-button size="sm" v-b-modal.new-service>Add new</b-button>
+          <div v-if="serviceName in state.servicesMap">
+            <b-button size="sm" class="mr-1" @click="saveService" variant="success">
+              Save
+            </b-button>
+            <b-button size="sm" class="mr-1" @click="toggleProxying">
+              {{ selectedService.proxying ? 'Disable' : 'Enable' }}
+            </b-button>
+            <b-button size="sm" class="mr-1" @click="deleteService" variant="danger">
+              Delete
+            </b-button>
+          </div>
+          <b-button size="sm" class="mr-1" v-b-modal.new-service>
+            Add new
+          </b-button>
         </b-navbar-nav>
       </b-collapse>
     </b-navbar>
     <b-container fluid class="fullbleed">
-      <router-view @loading="setLoading(true)"
-                   @loaded="setLoading(false)"
-                   @updateServices="updateServices">
-      </router-view>
+      <router-view></router-view>
     </b-container>
 
     <b-modal id="new-service" title="New service"
@@ -61,14 +71,13 @@
 </template>
 
 <script>
- import axios from 'axios';
+ import { state, bus } from './globs.js'
 
  export default {
    name: 'app',
    data () {
      return {
-       loading: true,
-       services: {},
+       state: state,
        forms: {
          tabIndex: 0,
          backendIp: '',
@@ -78,20 +87,30 @@
        }
      }
    },
+   computed: {
+     loading () {
+       return this.state.loading
+     },
+     services () {
+       return this.state.services
+     },
+     serviceName () {
+       return this.$route.params.service
+     },
+     selectedService () {
+       return this.state.servicesMap[this.serviceName]
+     }
+   },
    mounted () {
-     this.updateServices()
+     bus.$on('loaded-services', () => {
+       if (!this.serviceName in state.servicesMap) {
+         this.$router.push('/')
+       }
+     })
+     bus.$emit('load-services')
    },
    methods: {
-     updateServices () {
-       let that = this
-       axios.get('/api/services')
-            .then(function (response) {
-              that.services = response.data
-              that.loading = false
-            })
-     },
      newService () {
-       let that = this
        let handler = `from portcullis import Splicer
 
                       class Handler:
@@ -109,40 +128,33 @@
 
        let promises = []
 
-       function addPost (name, port) {
-         let config = `name = "${name}"
-                       host = "localhost"
-                       port = "${port}"
-                       backlog = 128
-                       handler_file = "$WORK_DIR/${name}.handler.py"
-                       managed = True
-                       protocol = "tcp"
-                       backend_host = "${that.forms.backendIp}"
-                       backend_port = "${port}"
-                       `
-         config = config.replace(/^ +/gm, '')
-         promises.push(axios.post('/api/services/' + name, {
-           config: config,
-           handler: handler
-         }))
-       }
+       let getServiceObj = (name, port) => ({
+         name: name,
+         config: `name = "${name}"
+                  host = "localhost"
+                  port = "${port}"
+                  backlog = 128
+                  handler_file = "$WORK_DIR/${name}.handler.py"
+                  managed = True
+                  protocol = "tcp"
+                  backend_host = "${this.forms.backendIp}"
+                  backend_port = "${port}"
+                  `.replace(/^ +/gm, ''),
+         handler: handler
+       })
 
        if (this.forms.tabIndex == 0) {
          let services = this.forms.services.match(/[^\r\n]+/g)
+         let res = []
          for (let s of services) {
            let [name, port] = s.split(':')
-           addPost(name, port)
+           res.push(getServiceObj(name, port))
          }
+         bus.$emit('update-services', res)
        } else if (this.forms.tabIndex == 1) {
          addPost(this.forms.name, this.forms.port)
-       } else {
-         return
+         bus.$emit('update-service', getServiceObj(name, port))
        }
-
-       axios.all(promises)
-            .then(axios.spread(function (acct, perms) {
-              that.updateServices()
-            }))
      },
      resetForms () {
        /* this.forms.services = ''
@@ -150,8 +162,24 @@
         * this.forms.port = '' */
        /* this.forms.backendIp = '' */
      },
-     setLoading (arg) {
-       this.loading = arg
+     saveService () {
+       bus.$emit('update-service', {
+         name: this.serviceName,
+         config: this.config,
+         handler: this.handler
+       })
+     },
+     toggleProxying () {
+       bus.$emit('update-service', {
+         name: this.serviceName,
+         proxying: !this.state.servicesMap[this.serviceName].proxying
+       })
+     },
+     deleteService () {
+       if (confirm(`Are you sure you want to delete service ${this.serviceName}?!!1`)) {
+         bus.$emit('delete-service', this.serviceName)
+         this.$router.push('/')
+       }
      }
    }
  }
