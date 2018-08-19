@@ -1,15 +1,11 @@
-from portcullis import Splicer
+from portcullis.core import TcpHandle, resolve
+from portcullis.helpers import read_packed, write_packed
 
-class Handler:
-    def __init__(self, ctx, client):
-        self.ctx = ctx
-        self.client = client
-        self.ctx.connect("tcp://localhost:80", self.entry)
 
-    def entry(self, backend):
-        self.backend = backend
-        self.splicer = Splicer(self.ctx, self.client, self.backend, self.end)
-        self.ctx.start_splicer(self.splicer)
+backend_addr = resolve("tcp://localhost:8080")
 
-    def end(self):
-        pass
+
+def handler(ctx, client):
+    backend = TcpHandle.create(ctx)
+    backend.connect(backend_addr)
+    print(client.transfer_all(backend))

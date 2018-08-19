@@ -8,14 +8,23 @@
 class TMemoryRegion {
 public:
     TMemoryRegion() = default;
-    TMemoryRegion(const void* data, size_t sz)
+    TMemoryRegion(void* data, size_t size)
         : Data_(data)
-        , Size_(sz)
+        , Size_(size)
     {
     }
 
     const void* Data() const {
         return Data_;
+    }
+
+    void* Data() {
+        return Data_;
+    }
+
+    template <typename T>
+    T DataAs() const {
+        return static_cast<T>(Data_);
     }
 
     size_t Size() const {
@@ -27,11 +36,11 @@ public:
     }
 
     TMemoryRegion Slice(size_t offset) const {
-        return TMemoryRegion(reinterpret_cast<const char*>(Data_) + offset, Size_ - offset);
+        return TMemoryRegion(reinterpret_cast<char*>(Data_) + offset, Size_ - offset);
     }
 
 private:
-    const void* Data_ = nullptr;
+    void* Data_ = nullptr;
     size_t Size_ = 0;
 };
 
@@ -94,6 +103,22 @@ public:
         Size_ += n;
     }
 
+    inline void Append(const void* data, size_t sz) {
+        if (sz > Remaining()) {
+            throw TException() << "buffer is full";
+        }
+        memcpy(End(), data, sz);
+        Advance(sz);
+    }
+
+    inline void Append(const std::string& data) {
+        Append(data.c_str(), data.size());
+    }
+
+    inline void Append(char ch) {
+        Append(&ch, 1);
+    }
+
     const void* Data() const {
         return Data_.get();
     }
@@ -102,13 +127,25 @@ public:
         return Data_.get();
     }
 
+    TMemoryRegion BackwardSlice(size_t size) {
+        return TMemoryRegion(DataAs<uint8_t*>() - size, size);
+    }
+
     template<class T>
     const T DataAs() const {
-        return static_cast<const T>(Data_.get());
+        return reinterpret_cast<T>(Data_.get());
     }
 
     void Reset() {
         Size_ = 0;
+    }
+
+    bool Full() const {
+        return Size_ == Capacity_;
+    }
+
+    bool Empty() const {
+        return Size_ == 0;
     }
 
     TMemoryRegion CurrentMemoryRegion() const {

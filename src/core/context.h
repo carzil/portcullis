@@ -6,10 +6,8 @@
 
 #include <unordered_map>
 
-#include "core/fwd.h"
-#include "core/handle.h"
-#include "core/loop.h"
-#include "shield/fwd.h"
+#include "fwd.h"
+#include <coro/tcp_handle.h>
 
 namespace py = pybind11;
 
@@ -27,33 +25,20 @@ struct TConfig {
     std::string BackendPort;
 };
 
-class TSplicer;
-
-class TContext : public std::enable_shared_from_this<TContext> {
+class TContext {
 public:
     std::shared_ptr<spdlog::logger> Logger;
     TConfig Config;
-    TSocketHandlePtr Listener;
-    py::object HandlerClass;
+    py::object HandlerObject;
     py::object HandlerModule;
-    TEventLoop* Loop = nullptr;
-    TCleanupHandle CleanupHandle;
     TSocketAddress BackendAddr;
 
     TSocketAddress Resolve(const std::string& addr);
-    void Finalize();
+    ~TContext() {
+        Logger->info("context destroyed");
+    }
 
-    void StartSplicer(TSplicerPtr splicer);
-    void StopSplicer(TSplicerPtr splicer);
-
-    void Cleanup();
-
-    ~TContext();
-
-private:
-    std::unordered_map<std::string, TSocketAddress> CachedAddrs_;
-    std::vector<TSplicerPtr> ActiveSplicers_;
-    std::vector<TSplicerPtr> FinishingSplicers_;
+    TSocketBufferPtr AllocBuffer(size_t size);
 };
 
 TConfig ReadConfigFromFile(std::string filename);

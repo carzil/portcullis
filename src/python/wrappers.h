@@ -1,55 +1,41 @@
 #pragma once
 
+#include <string_view>
 #include <pybind11/pybind11.h>
-
-#include "core/context.h"
-#include "core/handle.h"
-#include "core/loop.h"
-#include "core/buffer.h"
+#include <core/context.h>
+#include <coro/tcp_handle.h>
 
 namespace py = pybind11;
 
-class TSocketHandleWrapper {
+class TTcpHandleWrapper {
 public:
-    TSocketHandleWrapper(TSocketHandlePtr handle)
-        : Handle_(std::move(handle))
+    TTcpHandleWrapper(TContextPtr context, TTcpHandlePtr handle)
+        : Handle_(handle)
+        , Context_(context)
     {
     }
 
-    TSocketAddress Address() const {
-        return Handle_->Address();
+    static TTcpHandleWrapper Create(TContextPtr context) {
+        return TTcpHandleWrapper(context, TTcpHandle::Create());
     }
 
-    void Read(py::object handler);
-    void Write(std::string, py::object handler);
-    void Close();
+    void Connect(TSocketAddress addr);
 
-    TSocketHandlePtr Handle() {
-        return Handle_;
-    }
+    py::bytes Read(ssize_t size);
+    py::bytes ReadExactly(ssize_t size);
+    size_t Write(std::string_view buf);
+    void WriteAll(std::string_view buf);
 
-private:
-    TSocketHandlePtr Handle_;
-};
+    size_t Transfer(TTcpHandleWrapper other, size_t size);
+    size_t TransferAll(TTcpHandleWrapper other);
 
-class TContextWrapper {
-public:
-    TContextWrapper(TContextPtr context)
-        : Context_(std::move(context))
-    {
-    }
 
-    TSocketHandleWrapper MakeTcp() {
-        return TSocketHandleWrapper(Context_->Loop->MakeTcp());
-    }
-
-    void Connect(std::string endpointString, py::object handler);
-    void StartSplicer(TSplicerPtr splicer);
-
-    TContextPtr Get() {
-        return Context_;
+    void Close() {
+        Handle_->Close();
     }
 
 private:
-    TContextPtr Context_ = nullptr;
+    TTcpHandlePtr Handle_;
+    TContextPtr Context_;
 };
+

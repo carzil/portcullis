@@ -133,25 +133,38 @@ void TEventLoop::DoAccept(TSocketHandle* handle) {
 }
 
 void TEventLoop::DoRead(TSocketHandle* handle) {
-    ASSERT(handle->Active());
-    if (handle->ReadDestination->Remaining() == 0) {
-        handle->EnabledEvents &= ~TSocketHandle::ReadEvent;
-        return;
-    }
+    size_t readBytes = 0;
+    bool needHandlerCall = false;
+    for (;;) {
+        ASSERT(handle->Active());
 
-    ssize_t ret = ::read(handle->Fd(), handle->ReadDestination->End(), handle->ReadDestination->Remaining());
-
-    if (ret < 0) {
-        if (errno == EAGAIN) {
-            handle->ReadyEvents &= ~TSocketHandle::ReadEvent;
-        } else {
-            return;
+        if (handle->ReadDestination->Full()) {
+            handle->ReadHandler(handle->shared_from_this(), readBytes, readBytes == 0);
+            if (handle->ReadDestination->Full()) {
+                break;
+            }
         }
-    } else if (ret > 0) {
-        handle->ReadDestination->Advance(ret);
+
+        ssize_t ret = ::read(handle->Fd(), handle->ReadDestination->End(), handle->ReadDestination->Remaining());
+
+        if (ret < 0) {
+            if (errno == EAGAIN) {
+                handle->ReadyEvents &= ~TSocketHandle::ReadEvent;
+            }
+            break;
+        } else if (ret > 0) {
+            handle->ReadDestination->Advance(ret);
+            readBytes += ret;
+            needHandlerCall = true;
+        } else {
+            needHandlerCall = true;
+            break;
+        }
     }
 
-    handle->ReadHandler(handle->shared_from_this(), ret, ret == 0);
+    if (needHandlerCall) {
+        handle->ReadHandler(handle->shared_from_this(), readBytes, readBytes == 0);
+    }
 }
 
 void TEventLoop::DoWrite(TSocketHandle* handle) {
@@ -160,6 +173,7 @@ void TEventLoop::DoWrite(TSocketHandle* handle) {
         TMemoryRegion currentRegion = handle->WriteChain.CurrentMemoryRegion();
 
         if (currentRegion.Empty()) {
+            handle->EnabledEvents &= ~TSocketHandle::WriteEvent;
             handle->WriteHandler(handle->shared_from_this());
             break;
         }
@@ -169,10 +183,8 @@ void TEventLoop::DoWrite(TSocketHandle* handle) {
         if (res == -1) {
             if (errno == EAGAIN) {
                 handle->ReadyEvents &= ~TSocketHandle::WriteEvent;
-                break;
-            } else {
-                return;
             }
+            break;
         }
 
         handle->WriteChain.Advance(res);

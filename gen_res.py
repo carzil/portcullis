@@ -13,7 +13,7 @@ def main():
 
     os.makedirs(os.path.dirname(output), exist_ok=True)
     with open(output, "w") as f:
-        print("#include \"resource.h\"", file=f)
+        print("#include <util/resource.h>", file=f)
         print("static const char data[] = {", file=f)
         print(*map(hex, bs), sep=", ", file=f)
         print("};", file=f)

@@ -1,20 +1,19 @@
+#include "service.h"
 #include <csignal>
 #include <deque>
 #include <exception>
 #include <functional>
+
 #include <systemd/sd-daemon.h>
 
-#include "service.h"
-#include "version.h"
-#include "python/wrappers.h"
-#include "util/python.h"
-#include "shield/splicer.h"
+#include <coro/reactor.h>
+#include <python/wrappers.h>
+#include <util/python.h>
 
 using namespace std::placeholders;
 
-TService::TService(TEventLoop* loop, const std::string& configPath)
-    : Loop_(loop)
-    , ConfigPath_(configPath)
+TService::TService(const std::string& configPath)
+    : ConfigPath_(configPath)
 {
 }
 
@@ -31,10 +30,9 @@ std::shared_ptr<TContext> TService::ReloadContext() {
 
     TContextPtr context = std::make_shared<TContext>();
     context->Config = config;
-    context->HandlerClass = handlerModule["Handler"];
+    context->HandlerObject = handlerModule["handler"];
     context->HandlerModule = std::move(handlerModule);
     context->Logger = logger;
-    context->Loop = Loop_;
 
     context->BackendAddr = GetAddrInfo(
         context->Config.BackendHost,
@@ -43,33 +41,7 @@ std::shared_ptr<TContext> TService::ReloadContext() {
         context->Config.Protocol
     )[0];
 
-    TSocketAddress listeningAddress = GetAddrInfo(context->Config.Host, context->Config.Port, true, "tcp")[0];
-
-    if (!oldContext || (oldContext->Listener->Address() != listeningAddress)) {
-        context->Listener = Loop_->MakeTcp();
-        context->Listener->ReuseAddr();
-        context->Listener->Bind(listeningAddress);
-        context->Listener->Listen([this](TSocketHandlePtr, TSocketHandlePtr accepted) {
-            StartHandler(std::move(accepted));
-        }, context->Config.Backlog);
-
-        context->Logger->info("listening on {}:{}", listeningAddress.Host(), listeningAddress.Port());
-    } else {
-        context->Listener = oldContext->Listener;
-    }
-
-    context->CleanupHandle = Loop_->Cleanup([context]() {
-        context->Cleanup();
-    });
-
     return context;
-}
-
-void TService::Shutdown() {
-    ::sd_notify(0, "STOPPING=1");
-    ::sd_notify(0, "STATUS=Shutting down");
-    Context_->Logger->info("shutdown request");
-    Loop_->Shutdown();
 }
 
 void TService::Start() {
@@ -83,28 +55,33 @@ void TService::Start() {
         return;
     }
 
-    Loop_->Signal(SIGINT, [this](TSignalInfo info) {
-        std::shared_ptr<TContext> context = std::atomic_load(&Context_);
-        context->Logger->info("caught SIGINT from pid {}", info.Sender());
-        Shutdown();
+    TSignalSet shutdownSignals;
+    shutdownSignals.Add(SIGINT);
+    shutdownSignals.Add(SIGTERM);
+
+    // TODO: multiple bind address
+    TSocketAddress listeningAddress = GetAddrInfo(context->Config.Host, context->Config.Port, true, "tcp")[0];
+    Listener_ = TTcpHandle::Create();
+    Listener_->ReuseAddr();
+    Listener_->Bind(listeningAddress);
+    Listener_->Listen(context->Config.Backlog);
+    context->Logger->info("listening on {}:{}", listeningAddress.Host(), listeningAddress.Port());
+
+    Reactor()->OnSignals(shutdownSignals, [this](TSignalInfo info) {
+        Context_->Logger->info("caught shutdown signal from pid {}", info.Sender());
+        Reactor()->CancelAll();
     });
 
-    Loop_->Signal(SIGTERM, [this](TSignalInfo info) {
-        std::shared_ptr<TContext> context = std::atomic_load(&Context_);
-        context->Logger->info("caught SIGTERM from pid {}", info.Sender());
-        Shutdown();
-    });
 
-    Loop_->Signal(SIGUSR1, [this](TSignalInfo info) {
+    Reactor()->OnSignal(SIGUSR1, [this](TSignalInfo info) {
         ::sd_notify(0, "RELOADING=1");
         std::shared_ptr<TContext> oldContext = std::atomic_load(&Context_);
         oldContext->Logger->info("caught SIGUSR1 from {}", info.Sender());
         try {
             std::shared_ptr<TContext> newContext = ReloadContext();
             std::atomic_store(&Context_, newContext);
-            /* clean python objects that hold old context */
+            /* delete python objects that hold old context */
             py::module::import("gc").attr("collect")();
-            oldContext->Finalize();
             newContext->Logger->info("context reloaded");
             ::sd_notify(0, "STATUS=Reload succesful");
         } catch (const std::exception& e) {
@@ -114,20 +91,35 @@ void TService::Start() {
         ::sd_notify(0, "READY=1");
     });
 
-    /* well, loop not started yet, but we're almost ready */
+    Reactor()->StartCoroutine([this]() {
+        while (true) {
+            TResult<TTcpHandlePtr> result = Listener_->Accept();
+
+            if (!result) {
+                if (result.Status() == ECANCELED) {
+                    break;
+                } else {
+                    ThrowErr(result.Status(), "accept failed");
+                }
+            }
+
+            TTcpHandlePtr accepted = std::move(result.Result());
+
+            TContextPtr context = std::atomic_load(&Context_);
+            Reactor()->StartCoroutine([context, accepted]() {
+                try {
+                    context->HandlerObject(context, TTcpHandleWrapper(context, accepted));
+
+                    /* if handler still holds pointer to accepted */
+                    accepted->Close();
+                } catch (const std::exception& e) {
+                    context->Logger->error("exception in handler: {}", e.what());
+                    accepted->Close();
+                }
+            });
+        }
+    });
+
     ::sd_notify(0, "READY=1");
     ::sd_notify(0, "STATUS=Started");
-}
-
-void TService::StartHandler(TSocketHandlePtr accepted) {
-    TContextPtr context = std::atomic_load(&Context_);
-    try {
-        context->HandlerClass(
-            TContextWrapper(context),
-            TSocketHandleWrapper(accepted)
-        );
-    } catch (const std::exception& e) {
-        context->Logger->error("failed to create handler: {}", e.what());
-        accepted->Close();
-    }
 }

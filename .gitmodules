@@ -1,9 +1,12 @@
 [submodule "libs/pybind11"]
-	path = libs/pybind11
+	path = contrib/pybind11
 	url = https://github.com/pybind/pybind11.git
 [submodule "libs/spdlog"]
-	path = libs/spdlog
+	path = contrib/spdlog
 	url = https://github.com/gabime/spdlog.git
 [submodule "libs/picohttpparser"]
-	path = libs/picohttpparser
+	path = contrib/picohttpparser
 	url = https://github.com/h2o/picohttpparser.git
+[submodule "contrib/python"]
+	path = contrib/python
+	url = https://github.com/python/cpython.git

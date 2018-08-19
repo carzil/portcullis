@@ -1,14 +1,10 @@
-#include <sys/types.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <netinet/ip.h>
-#include <sys/socket.h>
-#include <netdb.h>
-
 #include <vector>
+#include <cstring>
 
-#include "handle.h"
-#include "loop.h"
+#include <arpa/inet.h>
+#include <netinet/ip.h>
+#include <util/network/address.h>
+#include <util/exception.h>
 
 TSocketAddress::TSocketAddress()
     : Len_(sizeof(sockaddr_storage))
@@ -34,8 +30,8 @@ uint16_t TSocketAddress::Port() const {
 }
 
 bool TSocketAddress::operator==(const TSocketAddress& other) const {
-    const sockaddr* sa1 = AddressAs<const sockaddr>();
-    const sockaddr* sa2 = other.AddressAs<const sockaddr>();
+    const sockaddr* sa1 = AddressAs<const sockaddr*>();
+    const sockaddr* sa2 = other.AddressAs<const sockaddr*>();
 
     if (sa1->sa_family != sa2->sa_family) {
         return false;
@@ -70,127 +66,10 @@ std::string TSocketAddress::Host() const {
         default:
             throw TException() << "unknown socket familly: " << sa->sa_family;
     };
-    if (host != nullptr) {
+    if (host) {
         return std::string(host);
     } else {
         return std::string();
-    }
-}
-
-
-TSocketHandle::~TSocketHandle() {
-    Close();
-}
-
-void TSocketHandle::Listen(TAcceptHandler handler, int backlog) {
-    if (!Active()) {
-        return;
-    }
-    AcceptHandler = std::move(handler);
-    Loop_->Listen(this, backlog);
-}
-
-void TSocketHandle::Read(TSocketBuffer* readDest, TReadHandler handler) {
-    if (!Active()) {
-        return;
-    }
-    ReadDestination = readDest;
-    ReadHandler = std::move(handler);
-    Loop_->StartRead(this);
-}
-
-void TSocketHandle::PauseRead() {
-    if (!Active()) {
-        return;
-    }
-    Loop_->StopRead(this);
-}
-
-void TSocketHandle::RestartRead() {
-    if (!Active()) {
-        return;
-    }
-    if (ReadHandler) {
-        Loop_->StartRead(this);
-    }
-}
-
-void TSocketHandle::Write(TMemoryRegionChain chain, TWriteHandler handler) {
-    if (!Active()) {
-        return;
-    }
-    WriteChain = std::move(chain);
-    WriteHandler = std::move(handler);
-    Loop_->StartWrite(this);
-}
-
-void TSocketHandle::Connect(TSocketAddress endpoint, TConnectHandler handler) {
-    if (!Active()) {
-        return;
-    }
-    ConnectHandler = std::move(handler);
-    ConnectEndpoint = std::move(endpoint);
-    Loop_->Connect(this);
-}
-
-void TSocketHandle::StopRead() {
-    if (!Active()) {
-        return;
-    }
-    ReadHandler = nullptr;
-    Loop_->StopRead(this);
-}
-
-void TSocketHandle::Close() {
-    ReadHandler = nullptr;
-    WriteHandler = nullptr;
-    AcceptHandler = nullptr;
-    ConnectHandler = nullptr;
-    ErrorHandler = nullptr;
-
-    ReadyEvents = 0;
-    EnabledEvents = 0;
-
-    if (Fd_ != -1) {
-        int fd = Fd_;
-        ::close(fd);
-        Fd_ = -1;
-        Loop_->Close(fd);
-    }
-}
-
-void TSocketHandle::ShutdownAll() {
-    if (Active()) {
-        ::shutdown(Fd_, SHUT_RDWR);
-    }
-}
-
-void TSocketHandle::ShutdownRead() {
-    if (Active()) {
-        ::shutdown(Fd_, SHUT_RD);
-    }
-}
-
-void TSocketHandle::ShutdownWrite() {
-    if (Active()) {
-        ::shutdown(Fd_, SHUT_WR);
-    }
-}
-
-void TSocketHandle::Bind(const TSocketAddress& addr) {
-    int res = ::bind(Fd_, addr.AddressAs<const sockaddr>(), addr.Length());
-    if (res < 0) {
-        char error[4096];
-        throw TException() << "bind failed: " << strerror_r(errno, error, sizeof(error));
-    }
-    SetAddress(addr);
-}
-
-void TSocketHandle::ReuseAddr() {
-    int enable = 1;
-    if (setsockopt(Fd(), SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0) {
-        char error[4096];
-        throw TException() << "setsockopt failed: " << strerror_r(errno, error, sizeof(error));
     }
 }
 
@@ -243,4 +122,25 @@ std::vector<TSocketAddress> GetAddrInfo(const std::string& host, const std::stri
     }
 
     return addresses;
+}
+
+TSocketAddress Resolve(const std::string& addressString) {
+    size_t protoDelimPos = addressString.find("://");
+    if (protoDelimPos == std::string::npos) {
+        throw TException() << "malformed resolve-string: '" << addressString << "'";
+    }
+
+    std::string proto = addressString.substr(0, protoDelimPos);
+
+    size_t hostDelimPos = addressString.find(":", protoDelimPos + 3);
+    if (hostDelimPos == std::string::npos) {
+        throw TException() << "malformed resolve-string: '" << addressString << "'";
+    }
+
+    std::string host = addressString.substr(protoDelimPos + 3, hostDelimPos - (protoDelimPos + 3));
+    std::string service = addressString.substr(hostDelimPos + 1);
+
+    TSocketAddress addr = GetAddrInfo(host, service, false, proto)[0];
+
+    return addr;
 }

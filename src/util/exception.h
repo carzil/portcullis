@@ -31,7 +31,9 @@ inline TException&& operator<<(TException&& e, const T& t) {
 
 
 #ifdef _DEBUG_
-#define ASSERT(a) assert(a)
+#define ASSERT(x) assert(x)
 #else
-#define ASSERT(a)
+#define ASSERT(x)
 #endif
+
+#define ENSURE(x, m) if (!(x)) { throw TException() << __FILE__ << ":" << __LINE__ << ": " << m; }

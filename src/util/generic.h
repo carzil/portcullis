@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <fcntl.h>
+#include <algorithm>
 
 #include <netdb.h>
 #include <sys/types.h>
@@ -11,7 +12,7 @@
 
 #include <cstring>
 
-#include "exception.h"
+#include <util/exception.h>
 
 class TMoveOnly {
 protected:
@@ -25,27 +26,46 @@ protected:
     ~TMoveOnly() = default;
 };
 
-
-inline void SetNonBlocking(int fd) {
-    int flags = fcntl(fd, F_GETFL);
-    if (flags == -1) {
-        char error[4096];
-        throw TException() << "fcntl failed: " << strerror_r(errno, error, sizeof(error));
+template <typename T>
+class TResult {
+public:
+    static TResult<T> MakeFail(int status) {
+        TResult<T> res;
+        res.Status_ = status;
+        return res;
     }
-    flags |= O_NONBLOCK;
-    if (fcntl(fd, F_SETFL, flags) == -1) {
-        char error[4096];
-        throw TException() << "fcntl failed: " << strerror_r(errno, error, sizeof(error));
-    }
-}
 
-inline int64_t GetCurrentMillis() {
-    timespec ts;
-    if (clock_gettime(CLOCK_MONOTONIC, &ts) == -1) {
-        char error[4096];
-        throw TException() << "clock_gettime failed: " << strerror_r(errno, error, sizeof(error));
+    static TResult<T> MakeSuccess(T result) {
+        TResult<T> res;
+        res.Status_ = 0;
+        res.Result_ = std::move(result);
+        return res;
     }
-    return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
-}
 
-std::string AbsPath(const std::string& path);
+
+    int Status() const {
+        return Status_;
+    }
+
+    const T& Result() const {
+        return Result_;
+    }
+
+    T& Result() {
+        return Result_;
+    }
+
+    explicit operator bool() {
+        return Status_ == 0;
+    }
+
+private:
+    int Status_ = -1;
+    T Result_;
+};
+
+#define ThrowErr(err, expr)  \
+    char error[1024]; \
+    throw (TException() << expr) << ": " << strerror_r(err, error, sizeof(error));
+
+#define ThrowErrno(expr) ThrowErr(errno, expr)

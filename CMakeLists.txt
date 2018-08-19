@@ -1,27 +1,20 @@
 cmake_minimum_required(VERSION 3.9)
 
-project(portcullis VERSION 0.1)
+project(portcullis VERSION 0.1 LANGUAGES C CXX ASM)
 
 include(ExternalProject)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -std=c++17 -Wno-pragmas -Wno-deprecated-declarations -fvisibility=hidden")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0 -fsanitize=address -D_DEBUG_")
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
+set(CMAKE_CXX_STANDARD 17)
 
-# externalproject_add(hyperscan_git
-#     GIT_REPOSITORY https://github.com/intel/hyperscan.git
-#     GIT_TAG "release-4.4"
-#     PREFIX "${CMAKE_CURRENT_BINARY_DIR}/hyperscan"
-#     CONFIGURE_COMMAND ""
-#     UPDATE_COMMAND ""
-#     INSTALL_COMMAND ""
-# )
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -Wno-pragmas -Wno-deprecated-declarations -fvisibility=hidden -Wextra")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0 -D_DEBUG_ -fsanitize=address -DASAN_BUILD -DSPDLOG_DEBUG_ON")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
 
 # prevent building tests by default
 set(BUILD_TESTING OFF CACHE BOOL "Build tests")
 
-add_subdirectory(libs/pybind11)
-add_subdirectory(libs/spdlog)
+add_subdirectory(contrib/pybind11)
+add_subdirectory(contrib/spdlog)
 
 find_package(Threads)
 
@@ -30,9 +23,9 @@ find_package(PythonInterp REQUIRED)
 find_package(PythonLibs REQUIRED)
 
 include_directories(
-    ${SPDLOG_INCLUDE_DIRS}
     ${CMAKE_CURRENT_BINARY_DIR}/src
     src/
+    contrib/picohttpparser/
 )
 
 execute_process(
@@ -47,33 +40,43 @@ configure_file(
     ${CMAKE_CURRENT_BINARY_DIR}/src/version.h
 )
 
-file(GLOB_RECURSE resources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/res "res/**")
+set(RESOURCES
+    helpers.py
+)
 
-foreach(res ${resources})
+foreach(res ${RESOURCES})
     add_custom_command(
         OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/res/${res}.cpp
         COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/gen_res.py ${res} ${CMAKE_CURRENT_SOURCE_DIR}/res/${res} ${CMAKE_CURRENT_BINARY_DIR}/res/${res}.cpp
         COMMENT "Packing resource '${res}'..."
+        DEPENDS gen_res.py res/${res}
     )
     set(GENERATED_RESOURCES ${GENERATED_RESOURCES} res/${res}.cpp)
 endforeach()
 
 set(SOURCES
-    src/core/buffer.cpp
-    src/core/handle.cpp
-    src/core/loop.cpp
-    src/core/resource.cpp
-    src/core/service.cpp
     src/core/context.cpp
+    src/core/service.cpp
+
+    src/coro/context.S
+    src/coro/coro.cpp
+    src/coro/handle.cpp
+    src/coro/tcp_handle.cpp
+    src/coro/reactor.cpp
+
     src/main.cpp
-    src/python/wrappers.cpp
+
     src/python/module.cpp
-    src/shield/splicer.cpp
-    src/util/python.cpp
+    src/python/wrappers.cpp
+
     src/util/generic.cpp
+    src/util/network/address.cpp
+    src/util/python.cpp
+    src/util/resource.cpp
+    src/util/system.cpp
 )
 
-add_library(picohttpparser STATIC libs/picohttpparser/picohttpparser.c)
+add_library(picohttpparser STATIC contrib/picohttpparser/picohttpparser.c)
 
 set_source_files_properties(${GENERATED_RESOURCES} PROPERTIES GENERATED TRUE)
 add_executable(portcullis ${SOURCES} ${GENERATED_RESOURCES})
