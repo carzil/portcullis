@@ -82,12 +82,12 @@ public:
      * If coroutine canceled while awaiting awaited coroutines are also canceled.
      * @return 0 on success, error code otherwise.
      */
-    int AwaitAll(std::initializer_list<TCoroutine*> coros);
+    TResult<bool> AwaitAll(std::initializer_list<TCoroutine*> coros);
 
     /*
      * Synonym for `AwaitAll({ coro })`;
      */
-    int Await(TCoroutine* coro) {
+    TResult<bool> Await(TCoroutine* coro) {
         return AwaitAll({ coro });
     }
 

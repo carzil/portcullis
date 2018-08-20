@@ -135,7 +135,7 @@ TResult<int> TReactor::WaitFor(int fd, uint32_t events) {
 
     if (CurrentCoro->Canceled) {
         SPDLOG_DEBUG(Logger_, "{} canceled immediately", reinterpret_cast<void*>(CurrentCoro));
-        return TResult<int>::MakeFail(ECANCELED);
+        return TResult<int>::MakeCanceled();
     }
 
     int readyMask = WaitState_[fd].ReadyEvents & events;
@@ -169,7 +169,7 @@ TResult<int> TReactor::WaitFor(int fd, uint32_t events) {
         if (events & TReactor::EvWrite) {
             WaitState_[fd].Writer = nullptr;
         }
-        return TResult<int>::MakeFail(ECANCELED);
+        return TResult<int>::MakeCanceled();
     }
 
     SPDLOG_DEBUG(Logger_, "{} woken up", reinterpret_cast<void*>(CurrentCoro));
@@ -214,7 +214,7 @@ TResult<size_t> TReactor::Read(int fd, void* to, size_t sz) {
     while (true) {
         TResult<int> eventsMask = Reactor()->WaitFor(fd, TReactor::EvRead);
         if (!eventsMask) {
-            return TResult<size_t>::MakeFail(eventsMask.Error());
+            return TResult<size_t>::ForwardError(eventsMask);
         }
         ssize_t res = ::read(fd, to, sz);
         if (res == -1) {
@@ -236,7 +236,7 @@ TResult<size_t> TReactor::Write(int fd, const void* from, size_t sz) {
     while (true) {
         TResult<int> eventsMask = Reactor()->WaitFor(fd, TReactor::EvWrite);
         if (!eventsMask) {
-            return TResult<size_t>::MakeFail(eventsMask.Error());
+            return TResult<size_t>::ForwardError(eventsMask);
         }
         ssize_t res = ::write(fd, from, sz);
         if (res == -1) {
@@ -257,7 +257,7 @@ TResult<int> TReactor::Accept(int fd, TSocketAddress* sockAddr) {
     while (true) {
         TResult<int> eventsMask = Reactor()->WaitFor(fd, TReactor::EvRead);
         if (!eventsMask) {
-            return TResult<int>::MakeFail(eventsMask.Error());
+            return TResult<int>::ForwardError(eventsMask);
         }
         sockaddr_storage addr;
         socklen_t len = sizeof(addr);
@@ -283,9 +283,9 @@ TResult<bool> TReactor::Connect(int fd, const TSocketAddress& addr) {
         if (errno == EINPROGRESS) {
             WaitState_[fd].ReadyEvents &= ~TReactor::EvWrite;
 
-            TResult<int> eventMask = WaitFor(fd, TReactor::EvWrite);
-            if (!eventMask) {
-                return TResult<bool>::MakeFail(eventMask.Error());
+            TResult<int> eventsMask = WaitFor(fd, TReactor::EvWrite);
+            if (!eventsMask) {
+                return TResult<bool>::ForwardError(eventsMask);
             }
 
             if (WaitState_[fd].ReadyEvents & TReactor::EvErr) {
@@ -421,9 +421,9 @@ void TReactor::CancelAll() {
     }
 }
 
-int TReactor::AwaitAll(std::initializer_list<TCoroutine*> coros) {
+TResult<bool> TReactor::AwaitAll(std::initializer_list<TCoroutine*> coros) {
     if (CurrentCoro->Canceled) {
-        return ECANCELED;
+        return TResult<bool>::MakeCanceled();
     }
 
     for (TCoroutine* coro : coros) {
@@ -443,7 +443,7 @@ int TReactor::AwaitAll(std::initializer_list<TCoroutine*> coros) {
                 coro->Cancel();
                 SPDLOG_DEBUG(Logger_, "canceled {} due to canceling {}", reinterpret_cast<void*>(coro), reinterpret_cast<void*>(CurrentCoro));
             }
-            return ECANCELED;
+            return TResult<bool>::MakeCanceled();
         }
 
         finishedCoroutines++;
@@ -451,5 +451,5 @@ int TReactor::AwaitAll(std::initializer_list<TCoroutine*> coros) {
 
     SPDLOG_DEBUG(Logger_, "{} done awaiting", reinterpret_cast<void*>(CurrentCoro));
 
-    return 0;
+    return TResult<bool>::MakeSuccess(true);
 }

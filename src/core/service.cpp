@@ -95,7 +95,7 @@ void TService::Start() {
             TResult<TTcpHandlePtr> result = Listener_->Accept();
 
             if (!result) {
-                if (result.Error() == ECANCELED) {
+                if (result.Canceled()) {
                     break;
                 } else {
                     ThrowErr(result.Error(), "accept failed");

@@ -14,7 +14,7 @@ TResult<TTcpHandlePtr> TTcpHandle::Accept() {
     TSocketAddress addr;
     TResult<int> fd = Reactor()->Accept(Fd(), &addr);
     if (!fd) {
-        return TResult<TTcpHandlePtr>::MakeFail(fd.Error());
+        return TResult<TTcpHandlePtr>::ForwardError(fd);
     }
     auto accepted = std::make_shared<TTcpHandle>(Reactor(), fd.Result());
     accepted->PeerAddress_ = std::move(addr);

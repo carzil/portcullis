@@ -31,7 +31,7 @@ class TResult {
 public:
     static TResult<T> MakeFail(int status) {
         TResult<T> res;
-        res.Error_ = status;
+        res.Error_ = static_cast<uint64_t>(status) << 1;
         return res;
     }
 
@@ -42,9 +42,28 @@ public:
         return res;
     }
 
+    static TResult<T> MakeCanceled() {
+        TResult<T> res;
+        res.Error_ = 1;
+        return res;
+    }
+
+    /*
+     * Forwards error from result `other`.
+     */
+    template <typename TT>
+    static TResult<T> ForwardError(TResult<TT> other) {
+        TResult<T> res;
+        res.Error_ = other.RawError();
+        return res;
+    }
 
     int Error() const {
-        return Error_;
+        return Error_ >> 1;
+    }
+
+    bool Canceled() {
+        return Error_ & 1;
     }
 
     const T& Result() const {
@@ -59,8 +78,12 @@ public:
         return Error_ == 0;
     }
 
+    uint64_t RawError() const {
+        return Error_;
+    }
+
 private:
-    int Error_ = -1;
+    uint64_t Error_ = -1;
     T Result_;
 };
 
