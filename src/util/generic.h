@@ -31,20 +31,20 @@ class TResult {
 public:
     static TResult<T> MakeFail(int status) {
         TResult<T> res;
-        res.Status_ = status;
+        res.Error_ = status;
         return res;
     }
 
     static TResult<T> MakeSuccess(T result) {
         TResult<T> res;
-        res.Status_ = 0;
+        res.Error_ = 0;
         res.Result_ = std::move(result);
         return res;
     }
 
 
-    int Status() const {
-        return Status_;
+    int Error() const {
+        return Error_;
     }
 
     const T& Result() const {
@@ -56,11 +56,11 @@ public:
     }
 
     explicit operator bool() {
-        return Status_ == 0;
+        return Error_ == 0;
     }
 
 private:
-    int Status_ = -1;
+    int Error_ = -1;
     T Result_;
 };
 

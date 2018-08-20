@@ -95,10 +95,10 @@ void TService::Start() {
             TResult<TTcpHandlePtr> result = Listener_->Accept();
 
             if (!result) {
-                if (result.Status() == ECANCELED) {
+                if (result.Error() == ECANCELED) {
                     break;
                 } else {
-                    ThrowErr(result.Status(), "accept failed");
+                    ThrowErr(result.Error(), "accept failed");
                 }
             }
 

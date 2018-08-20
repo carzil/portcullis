@@ -14,14 +14,14 @@ TResult<TTcpHandlePtr> TTcpHandle::Accept() {
     TSocketAddress addr;
     TResult<int> fd = Reactor()->Accept(Fd(), &addr);
     if (!fd) {
-        return TResult<TTcpHandlePtr>::MakeFail(fd.Status());
+        return TResult<TTcpHandlePtr>::MakeFail(fd.Error());
     }
     auto accepted = std::make_shared<TTcpHandle>(Reactor(), fd.Result());
     accepted->PeerAddress_ = std::move(addr);
     return TResult<TTcpHandlePtr>::MakeSuccess(accepted);
 }
 
-TResult<int> TTcpHandle::Connect(const TSocketAddress& addr) {
+TResult<bool> TTcpHandle::Connect(const TSocketAddress& addr) {
     return Reactor()->Connect(Fd(), addr);
 }
 

@@ -15,7 +15,7 @@ public:
     void Listen(int backlog);
 
     TResult<TTcpHandlePtr> Accept();
-    TResult<int> Connect(const TSocketAddress& endpoint);
+    TResult<bool> Connect(const TSocketAddress& endpoint);
 
     void ReuseAddr();
     void ReusePort();

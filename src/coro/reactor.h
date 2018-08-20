@@ -162,7 +162,7 @@ public:
     /*
      * Connects given `fd` to endpoint `addr`.
      */
-    TResult<int> Connect(int fd, const TSocketAddress& addr);
+    TResult<bool> Connect(int fd, const TSocketAddress& addr);
 
     /*
      * Registers signal handler.

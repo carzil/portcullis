@@ -5,7 +5,7 @@ py::bytes TTcpHandleWrapper::Read(ssize_t size) {
     TSocketBuffer buffer(size);
     TResult<size_t> res = Handle_->Read(buffer);
     if (!res) {
-        ThrowErr(res.Status(), "read failed");
+        ThrowErr(res.Error(), "read failed");
     }
     return py::bytes(buffer.DataAs<const char*>(), size);
 }
@@ -16,7 +16,7 @@ py::bytes TTcpHandleWrapper::ReadExactly(ssize_t size) {
     while (buffer.Remaining() > 0) {
         TResult<size_t> res = Handle_->Read(buffer);
         if (!res) {
-            ThrowErr(res.Status(), "read_exactly failed");
+            ThrowErr(res.Error(), "read_exactly failed");
         } else if (res.Result() == 0) {
             throw TException() << "read_exactly failed: eof reached";
         }
@@ -30,7 +30,7 @@ size_t TTcpHandleWrapper::Write(std::string_view buf) {
 
     TResult<size_t> res = Handle_->Write(region);
     if (!res) {
-        ThrowErr(res.Status(), "write failed");
+        ThrowErr(res.Error(), "write failed");
     }
     return res.Result();
 }
@@ -41,7 +41,7 @@ void TTcpHandleWrapper::WriteAll(std::string_view buf) {
     while (!region.Empty()) {
         TResult<size_t> res = Handle_->Write(region);
         if (!res) {
-            ThrowErr(res.Status(), "write failed");
+            ThrowErr(res.Error(), "write failed");
         }
         region = region.Slice(res.Result());
 
@@ -49,9 +49,9 @@ void TTcpHandleWrapper::WriteAll(std::string_view buf) {
 }
 
 void TTcpHandleWrapper::Connect(TSocketAddress addr) {
-    TResult<int> res = Handle_->Connect(addr);
+    TResult<bool> res = Handle_->Connect(addr);
     if (!res) {
-        ThrowErr(res.Status(), "connect failed");
+        ThrowErr(res.Error(), "connect failed");
     }
 }
 
@@ -63,7 +63,7 @@ size_t TTcpHandleWrapper::Transfer(TTcpHandleWrapper other, size_t size) {
     while (transfered < size) {
         TResult<size_t> res = Handle_->Transfer(*other.Handle_, buffer, std::min(buffer.Remaining(), size));
         if (!res) {
-            ThrowErr(res.Status(), "transfer failed");
+            ThrowErr(res.Error(), "transfer failed");
         }
 
         if (res.Result() == 0) {
@@ -84,7 +84,7 @@ size_t TTcpHandleWrapper::TransferAll(TTcpHandleWrapper other) {
     while (true) {
         TResult<size_t> res = Handle_->Transfer(*other.Handle_, buffer, buffer.Remaining());
         if (!res) {
-            ThrowErr(res.Status(), "transfer failed");
+            ThrowErr(res.Error(), "transfer failed");
         }
 
         if (res.Result() == 0) {

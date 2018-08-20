@@ -214,7 +214,7 @@ TResult<size_t> TReactor::Read(int fd, void* to, size_t sz) {
     while (true) {
         TResult<int> eventsMask = Reactor()->WaitFor(fd, TReactor::EvRead);
         if (!eventsMask) {
-            return TResult<size_t>::MakeFail(eventsMask.Status());
+            return TResult<size_t>::MakeFail(eventsMask.Error());
         }
         ssize_t res = ::read(fd, to, sz);
         if (res == -1) {
@@ -236,7 +236,7 @@ TResult<size_t> TReactor::Write(int fd, const void* from, size_t sz) {
     while (true) {
         TResult<int> eventsMask = Reactor()->WaitFor(fd, TReactor::EvWrite);
         if (!eventsMask) {
-            return TResult<size_t>::MakeFail(eventsMask.Status());
+            return TResult<size_t>::MakeFail(eventsMask.Error());
         }
         ssize_t res = ::write(fd, from, sz);
         if (res == -1) {
@@ -257,7 +257,7 @@ TResult<int> TReactor::Accept(int fd, TSocketAddress* sockAddr) {
     while (true) {
         TResult<int> eventsMask = Reactor()->WaitFor(fd, TReactor::EvRead);
         if (!eventsMask) {
-            return TResult<int>::MakeFail(eventsMask.Status());
+            return TResult<int>::MakeFail(eventsMask.Error());
         }
         sockaddr_storage addr;
         socklen_t len = sizeof(addr);
@@ -277,7 +277,7 @@ TResult<int> TReactor::Accept(int fd, TSocketAddress* sockAddr) {
     }
 }
 
-TResult<int> TReactor::Connect(int fd, const TSocketAddress& addr) {
+TResult<bool> TReactor::Connect(int fd, const TSocketAddress& addr) {
     int res = ::connect(fd, addr.AddressAs<const sockaddr*>(), addr.Length());
     if (res == -1) {
         if (errno == EINPROGRESS) {
@@ -285,7 +285,7 @@ TResult<int> TReactor::Connect(int fd, const TSocketAddress& addr) {
 
             TResult<int> eventMask = WaitFor(fd, TReactor::EvWrite);
             if (!eventMask) {
-                return eventMask;
+                return TResult<bool>::MakeFail(eventMask.Error());
             }
 
             if (WaitState_[fd].ReadyEvents & TReactor::EvErr) {
@@ -295,16 +295,16 @@ TResult<int> TReactor::Connect(int fd, const TSocketAddress& addr) {
                 WaitState_[fd].ReadyEvents &= ~TReactor::EvErr;
 
                 SPDLOG_DEBUG(Logger_, "{} performed Connect({}, \"{}:{}\") = {}", reinterpret_cast<void*>(CurrentCoro), fd, addr.Host(), addr.Port(), -err);
-                return TResult<int>::MakeFail(err);
+                return TResult<bool>::MakeFail(err);
             }
         } else {
             SPDLOG_DEBUG(Logger_, "{} performed Connect({}, \"{}:{}\") = {}", reinterpret_cast<void*>(CurrentCoro), fd, addr.Host(), addr.Port(), -errno);
-            return TResult<int>::MakeFail(errno);
+            return TResult<bool>::MakeFail(errno);
         }
     }
 
     SPDLOG_DEBUG(Logger_, "{} performed Connect({}, \"{}:{}\") = 0", reinterpret_cast<void*>(CurrentCoro), fd, addr.Host(), addr.Port());
-    return TResult<int>::MakeSuccess(0);
+    return TResult<bool>::MakeSuccess(true);
 }
 
 int TReactor::EpollOp(int op, int fd, int events) {
