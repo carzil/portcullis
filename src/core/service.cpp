@@ -72,7 +72,6 @@ void TService::Start() {
         Reactor()->CancelAll();
     });
 
-
     Reactor()->OnSignal(SIGUSR1, [this](TSignalInfo info) {
         ::sd_notify(0, "RELOADING=1");
         std::shared_ptr<TContext> oldContext = std::atomic_load(&Context_);
