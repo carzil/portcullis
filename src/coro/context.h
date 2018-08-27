@@ -26,34 +26,45 @@ struct TSavedContext {
         Registers[7] = reinterpret_cast<uint64_t>(ip);
     }
 
-    void SwitchTo(TSavedContext& other, void* stack, size_t len) {
+    void SwitchTo(TSavedContext& other, void* newStack, size_t newSize, bool exitOld) {
         if (__save_context(&Registers) != 0) {
 #ifdef ASAN_BUILD
-            __sanitizer_finish_switch_fiber(Token_, nullptr, nullptr);
+            __sanitizer_finish_switch_fiber(FakeStack_, &other.StackAddr_, &other.StackSize_);
 #endif
             return;
         } else {
 #ifdef ASAN_BUILD
-        __sanitizer_start_switch_fiber(&other.Token_, stack, len);
+            other.PrevContext_ = this;
+            if (!exitOld) {
+                __sanitizer_start_switch_fiber(&other.FakeStack_, newStack, newSize);
+            } else {
+                if (!other.IsMain_) {
+                    __sanitizer_start_switch_fiber(nullptr, newStack, newSize);
+                } else {
+                    __sanitizer_start_switch_fiber(nullptr, other.StackAddr_, other.StackSize_);
+                }
+            }
 #endif
             __switch_to(&other.Registers);
         }
     }
 
-    inline void OnStart() {
+    void OnStart() {
 #ifdef ASAN_BUILD
-        __sanitizer_finish_switch_fiber(nullptr, nullptr, nullptr);
+        __sanitizer_finish_switch_fiber(FakeStack_, &PrevContext_->StackAddr_, &PrevContext_->StackSize_);
 #endif
     }
 
-    inline void OnFinish() {
-#ifdef ASAN_BUILD
-        __sanitizer_start_switch_fiber(nullptr, nullptr, 0);
-#endif
+    void MarkAsMain() {
+        IsMain_ = true;
     }
 
 #ifdef ASAN_BUILD
 private:
-    void* Token_ = nullptr;
+    void* FakeStack_ = nullptr;
+    const void* StackAddr_ = nullptr;
+    size_t StackSize_ = 0;
+    TSavedContext* PrevContext_ = nullptr;
+    bool IsMain_ = false;
 #endif
 };

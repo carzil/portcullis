@@ -33,6 +33,7 @@ TReactor::TReactor(std::shared_ptr<spdlog::logger> logger)
     std::fill(SignalHandlers_.begin(), SignalHandlers_.end(), nullptr);
 
     InitialCoro_.Reactor = this;
+    InitialCoro_.Context.MarkAsMain();
 }
 
 TCoroutine* TReactor::Current() const {
@@ -52,8 +53,6 @@ TCoroutine* TReactor::StartCoroutine(TCoroEntry entry) {
 void TReactor::Finish(TCoroutine* coro) {
     TCoroutine* awaiter = coro->Awaiter;
     TSavedContext oldContext = CurrentCoro->Context;
-    void* stackStart = CurrentCoro->Stack.Start();
-    size_t stackSize = CurrentCoro->Stack.Size();
 
     FinishedCoroutines_.push_back(std::move(*coro->ListIter));
     ActiveCoroutines_.erase(coro->ListIter);
@@ -62,20 +61,20 @@ void TReactor::Finish(TCoroutine* coro) {
 
     if (ActiveCoroutines_.empty()) {
         SPDLOG_DEBUG(Logger_, "no active coroutines left");
-        oldContext.SwitchTo(InitialCoro_.Context, stackStart, stackSize);
+        oldContext.SwitchTo(InitialCoro_.Context, nullptr, 0, true);
     }
 
     if (awaiter) {
         awaiter->Wakeup();
     }
 
-    SwitchCoroutine();
+    SwitchCoroutine(true);
 }
 
 void TReactor::Yield() {
     SPDLOG_DEBUG(Logger_, "{} yielded", reinterpret_cast<void*>(CurrentCoro));
     ScheduledNextCoroutines_.push_back(CurrentCoro);
-    SwitchCoroutine();
+    SwitchCoroutine(false);
 }
 
 void TReactor::Run() {
@@ -84,10 +83,10 @@ void TReactor::Run() {
     }
     CurrentCoro = &InitialCoro_;
     CurrentReactor = this;
-    SwitchCoroutine();
+    SwitchCoroutine(false);
 }
 
-void TReactor::SwitchCoroutine() {
+void TReactor::SwitchCoroutine(bool exitOld) {
     CurrentCoro->Awake = false;
 
     if (ScheduledCoroutines_.empty()) {
@@ -116,7 +115,11 @@ void TReactor::SwitchCoroutine() {
     CurrentCoro = ready;
 
     SPDLOG_DEBUG(Logger_, "switch: {} -> {}", reinterpret_cast<void*>(old), reinterpret_cast<void*>(ready));
-    old->Context.SwitchTo(ready->Context, old->Stack.Start(), old->Stack.Size());
+    old->Context.SwitchTo(
+        ready->Context,
+        ready->Stack.Start(), ready->Stack.Size(),
+        exitOld
+    );
 
     FinishedCoroutines_.clear();
 }
@@ -168,7 +171,7 @@ TResult<int> TReactor::WaitFor(int fd, uint32_t waitEvents, TDeadline deadline) 
         DeadlineQueue_.Push(CurrentCoro);
     }
 
-    SwitchCoroutine();
+    SwitchCoroutine(false);
 
     if (CurrentCoro->DeadlineReached) {
         SPDLOG_DEBUG(Logger_, "{} deadline reached while WaitFor(fd={}, waitEvents={})", reinterpret_cast<void*>(CurrentCoro), fd, waitEvents);
@@ -453,7 +456,7 @@ TResult<bool> TReactor::AwaitAll(std::initializer_list<TCoroutine*> coros) {
 
     size_t finishedCoroutines = 0;
     while (finishedCoroutines < coros.size()) {
-        SwitchCoroutine();
+        SwitchCoroutine(false);
 
         if (CurrentCoro->Canceled) {
             for (TCoroutine* coro : coros) {

@@ -257,7 +257,7 @@ private:
 
     void Finish(TCoroutine*);
 
-    void SwitchCoroutine();
+    void SwitchCoroutine(bool exitOld);
     void DoSignal();
     void DoPoll();
 
