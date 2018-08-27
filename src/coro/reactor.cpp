@@ -65,7 +65,6 @@ void TReactor::Finish(TCoroutine* coro) {
     }
 
     if (awaiter) {
-        awaiter->AwaitsFinished++;
         awaiter->Wakeup();
     }
 
@@ -444,33 +443,24 @@ void TReactor::CancelAll() {
     }
 }
 
-TResult<bool> TReactor::AwaitAll(std::initializer_list<TCoroutine*> coros) {
+TResult<bool> TReactor::Await(TCoroutine* coro) {
+    ASSERT(coro != CurrentCoro);
+    ASSERT(!coro->Awaiter);
+
     if (CurrentCoro->Canceled) {
+        coro->Cancel();
         return TResult<bool>::MakeCanceled();
     }
 
-    for (TCoroutine* coro : coros) {
-        ASSERT(coro != CurrentCoro);
-        ASSERT(!coro->Awaiter);
-        coro->Awaiter = CurrentCoro;
-    }
+    coro->Awaiter = CurrentCoro;
 
-    size_t finishedCoroutines = 0;
-    while (finishedCoroutines < coros.size()) {
-        CurrentCoro->AwaitsFinished = 0;
-        SwitchCoroutine(false);
+    SwitchCoroutine(false);
 
-        if (CurrentCoro->Canceled) {
-            for (TCoroutine* coro : coros) {
-                /* prevent use-after-free */
-                coro->Awaiter = nullptr;
-                coro->Cancel();
-                SPDLOG_DEBUG(Logger_, "canceled {} due to canceling {}", reinterpret_cast<void*>(coro), reinterpret_cast<void*>(CurrentCoro));
-            }
-            return TResult<bool>::MakeCanceled();
-        }
-
-        finishedCoroutines += CurrentCoro->AwaitsFinished;
+    if (CurrentCoro->Canceled) {
+        coro->Awaiter = nullptr;
+        coro->Cancel();
+        SPDLOG_DEBUG(Logger_, "canceled {} due to canceling {}", reinterpret_cast<void*>(coro), reinterpret_cast<void*>(CurrentCoro));
+        return TResult<bool>::MakeCanceled();
     }
 
     SPDLOG_DEBUG(Logger_, "{} done awaiting", reinterpret_cast<void*>(CurrentCoro));

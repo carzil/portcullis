@@ -70,7 +70,6 @@ public:
         bool DeadlineReached = false;
 
         TCoroutine* Awaiter = nullptr;
-        size_t AwaitsFinished = 0;
 
         /* for deadline queue */
         TDeadline Deadline;
@@ -146,18 +145,10 @@ public:
     TCoroutine* StartCoroutine(TCoroEntry);
 
     /*
-     * Wait for finish of all coroutines in `coros`.
-     * If coroutine canceled while awaiting awaited coroutines are also canceled.
-     * @return 0 on success, error code otherwise.
+     * Waits for finish of `coro`.
+     * If coroutine canceled while awaiting awaited coroutine is also canceled.
      */
-    TResult<bool> AwaitAll(std::initializer_list<TCoroutine*> coros);
-
-    /*
-     * Synonym for `AwaitAll({ coro })`;
-     */
-    TResult<bool> Await(TCoroutine* coro) {
-        return AwaitAll({ coro });
-    }
+    TResult<bool> Await(TCoroutine* coro);
 
     /*
      * After call of this method reactor will run,
