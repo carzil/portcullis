@@ -132,12 +132,12 @@ void TReactor::Wakeup(TCoroutine* coro) {
 
 void TReactor::UpdateWaitState(int fd, uint32_t events, TCoroutine* value) {
     if (events & TReactor::EvRead) {
-        ASSERT(!WaitState_[fd].Reader);
+        ASSERT(!value || !WaitState_[fd].Reader);
         WaitState_[fd].Reader = value;
     }
 
     if (events & TReactor::EvWrite) {
-        ASSERT(!WaitState_[fd].Writer);
+        ASSERT(!value || !WaitState_[fd].Writer);
         WaitState_[fd].Writer = value;
     }
 }
@@ -160,7 +160,7 @@ TResult<int> TReactor::WaitFor(int fd, uint32_t waitEvents, TDeadline deadline) 
 
     UpdateWaitState(fd, waitEvents, CurrentCoro);
 
-    SPDLOG_DEBUG(Logger_, "{} starts WaitFor(fd={}, waitEvents={}, deadline={})", reinterpret_cast<void*>(CurrentCoro), fd, events, timeout);
+    SPDLOG_DEBUG(Logger_, "{} starts WaitFor(fd={}, waitEvents={})", reinterpret_cast<void*>(CurrentCoro), fd, waitEvents);
 
     if (deadline != TDeadline::max()) {
         CurrentCoro->DeadlineReached = false;
@@ -171,7 +171,7 @@ TResult<int> TReactor::WaitFor(int fd, uint32_t waitEvents, TDeadline deadline) 
     SwitchCoroutine();
 
     if (CurrentCoro->DeadlineReached) {
-        SPDLOG_DEBUG(Logger_, "{} deadline reached while WaitFor(fd={}, waitEvents={})", reinterpret_cast<void*>(CurrentCoro), fd, events);
+        SPDLOG_DEBUG(Logger_, "{} deadline reached while WaitFor(fd={}, waitEvents={})", reinterpret_cast<void*>(CurrentCoro), fd, waitEvents);
         UpdateWaitState(fd, waitEvents, nullptr);
         return TResult<int>::MakeTimedOut();
     }
@@ -427,7 +427,9 @@ void TReactor::CloseFd(int fd) {
 
 void TReactor::Cancel(TCoroutine* coro) {
     SPDLOG_DEBUG(Logger_, "cancel {}", reinterpret_cast<void*>(coro));
-    DeadlineQueue_.Remove(coro);
+    if (coro->PosInDeadlineQueue != TDeadlineQueue::InvalidPos) {
+        DeadlineQueue_.Remove(coro);
+    }
     coro->Canceled = true;
     coro->Wakeup();
 }

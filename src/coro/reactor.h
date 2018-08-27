@@ -81,6 +81,8 @@ public:
 
     class TDeadlineQueue {
     public:
+        static constexpr size_t InvalidPos = -1;
+
         TCoroutine* Top() const {
             return Queue_[0];
         }
@@ -106,7 +108,7 @@ public:
         }
 
         void Remove(TCoroutine* coro) {
-            ASSERT(coro->PosInDeadlineQueue != -1);
+            ASSERT(coro->PosInDeadlineQueue != InvalidPos);
             Queue_[coro->PosInDeadlineQueue] = Queue_.back();
             Queue_.resize(Queue_.size() - 1);
             SiftDown(0);
