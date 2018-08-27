@@ -56,7 +56,9 @@ struct TSavedContext {
     }
 
     void MarkAsMain() {
+#ifdef ASAN_BUILD
         IsMain_ = true;
+#endif
     }
 
 #ifdef ASAN_BUILD

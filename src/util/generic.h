@@ -84,7 +84,7 @@ public:
         return Result_;
     }
 
-    explicit operator bool() {
+    explicit operator bool() const {
         return Error_ == 0;
     }
 

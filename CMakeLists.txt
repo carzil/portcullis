@@ -13,6 +13,8 @@ set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
 # prevent building tests by default
 set(BUILD_TESTING OFF CACHE BOOL "Build tests")
 
+set(PORTCULLIS_TESTING OFF CACHE BOOL "Build portcullis tests")
+
 add_subdirectory(contrib/pybind11)
 add_subdirectory(contrib/spdlog)
 
@@ -54,7 +56,13 @@ foreach(res ${RESOURCES})
     set(GENERATED_RESOURCES ${GENERATED_RESOURCES} res/${res}.cpp)
 endforeach()
 
-set(SOURCES
+set(EXECUTABLE_SOURCES
+    src/main.cpp
+    src/python/module.cpp
+    src/util/resource.cpp
+)
+
+set(CORE_SOURCES
     src/core/context.cpp
     src/core/service.cpp
 
@@ -64,20 +72,23 @@ set(SOURCES
     src/coro/tcp_handle.cpp
     src/coro/reactor.cpp
 
-    src/main.cpp
-
-    src/python/module.cpp
     src/python/wrappers.cpp
 
     src/util/generic.cpp
     src/util/network/address.cpp
     src/util/python.cpp
-    src/util/resource.cpp
     src/util/system.cpp
 )
 
 add_library(picohttpparser STATIC contrib/picohttpparser/picohttpparser.c)
 
+add_library(portcullis-core STATIC ${CORE_SOURCES})
+target_link_libraries(portcullis-core PRIVATE ${PYTHON_LIBRARIES} pybind11::embed spdlog systemd ${CMAKE_THREAD_LIBS_INIT} picohttpparser)
+
 set_source_files_properties(${GENERATED_RESOURCES} PROPERTIES GENERATED TRUE)
-add_executable(portcullis ${SOURCES} ${GENERATED_RESOURCES})
-target_link_libraries(portcullis PRIVATE ${PYTHON_LIBRARIES} pybind11::embed spdlog systemd ${CMAKE_THREAD_LIBS_INIT} picohttpparser)
+add_executable(portcullis ${EXECUTABLE_SOURCES} ${GENERATED_RESOURCES})
+target_link_libraries(portcullis PRIVATE portcullis-core ${PYTHON_LIBRARIES} pybind11::embed spdlog)
+
+if (PORTCULLIS_TESTING)
+    add_subdirectory(tests)
+endif()
