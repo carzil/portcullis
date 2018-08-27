@@ -14,8 +14,8 @@ public:
     void Bind(const TSocketAddress& addr);
     void Listen(int backlog);
 
-    TResult<TTcpHandlePtr> Accept();
-    TResult<bool> Connect(const TSocketAddress& endpoint);
+    TResult<TTcpHandlePtr> Accept(TReactor::TDeadline deadline = TReactor::TDeadline::max());
+    TResult<bool> Connect(const TSocketAddress& endpoint, TReactor::TDeadline deadline = TReactor::TDeadline::max());
 
     void ReuseAddr();
     void ReusePort();

@@ -3,6 +3,7 @@
 #include <vector>
 #include <list>
 #include <memory>
+#include <chrono>
 
 #include <spdlog/spdlog.h>
 
@@ -26,6 +27,8 @@ public:
         EvWrite = 1 << 1,
         EvErr = 1 << 2,
     };
+
+    using TDeadline = std::chrono::steady_clock::time_point;
 
     /*
      * Represents coroutine inside reactor.
@@ -59,14 +62,75 @@ public:
         TCoroEntry Entry;
         TCoroStack Stack;
         TSavedContext Context;
+
+        /* TODO: flags */
         bool Started = false;
         bool Awake = false;
         bool Canceled = false;
+        bool DeadlineReached = false;
 
         TCoroutine* Awaiter = nullptr;
 
+        /* for deadline queue */
+        TDeadline Deadline;
+        size_t PosInDeadlineQueue = -1;
+
         /* Iterator in ActiveCoroutines_ list for fast removal */
         std::list<std::unique_ptr<TCoroutine>>::iterator ListIter;
+    };
+
+    class TDeadlineQueue {
+    public:
+        TCoroutine* Top() const {
+            return Queue_[0];
+        }
+
+        TCoroutine* Peek() {
+            TCoroutine* res = Queue_[0];
+            Pop();
+            return res;
+        }
+
+        void Pop() {
+            if (Queue_.size() == 1) {
+                Queue_.resize(0);
+                return;
+            }
+
+            Remove(Top());
+        }
+
+        void Push(TCoroutine* coro) {
+            Queue_.push_back(coro);
+            SiftUp(Queue_.size() - 1);
+        }
+        void Remove(TCoroutine* coro) {
+            ASSERT(coro->PosInDeadlineQueue != -1);
+            Queue_[coro->PosInDeadlineQueue] = Queue_.back();
+            Queue_.resize(Queue_.size() - 1);
+            SiftDown(0);
+        }
+
+        bool Empty() const {
+            return Queue_.empty();
+        }
+
+    private:
+        inline void Swap(size_t l, size_t r) {
+            ASSERT(l < Queue_.size() && r < Queue_.size());
+
+            TCoroutine* tmp = Queue_[l];
+            Queue_[l] = Queue_[r];
+            Queue_[r] = tmp;
+
+            Queue_[l]->PosInDeadlineQueue = l;
+            Queue_[r]->PosInDeadlineQueue = r;
+        }
+
+        void SiftDown(size_t idx);
+        void SiftUp(size_t idx);
+
+        std::vector<TCoroutine*> Queue_;
     };
 
     TReactor(std::shared_ptr<spdlog::logger> logger);
@@ -138,31 +202,31 @@ public:
      * @param events -- events list to wait.
      * @returns ready event mask or integer < 0 if error occurred.
      */
-    TResult<int> WaitFor(int fd, uint32_t events);
+    TResult<int> WaitFor(int fd, uint32_t events, TDeadline deadline = TDeadline::max());
 
     /*
      * Reads at most `size` bytes to memory pointer by `to`.
      * @return how many bytes were read.
      */
-    TResult<size_t> Read(int fd, void* to, size_t size);
+    TResult<size_t> Read(int fd, void* to, size_t size, TDeadline deadline = TDeadline::max());
 
     /*
      * Writes at most `size` bytes from memory pointer by `from`.
      * @return how many bytes were written.
      */
-    TResult<size_t> Write(int fd, const void* from, size_t size);
+    TResult<size_t> Write(int fd, const void* from, size_t size, TDeadline deadline = TDeadline::max());
 
     /*
      * Accepts new connection on given `fd`.
      * @param addr -- address of new connection on success.
      * @return file descriptor of new connection.
      */
-    TResult<int> Accept(int fd, TSocketAddress* addr);
+    TResult<int> Accept(int fd, TSocketAddress* addr, TDeadline deadline = TDeadline::max());
 
     /*
      * Connects given `fd` to endpoint `addr`.
      */
-    TResult<bool> Connect(int fd, const TSocketAddress& addr);
+    TResult<bool> Connect(int fd, const TSocketAddress& addr, TDeadline deadline = TDeadline::max());
 
     /*
      * Registers signal handler.
@@ -209,6 +273,8 @@ private:
     int SignalFd_ = -1;
     TSignalSet BlockedSignals_;
     std::array<TSignalHandler, SIGMAX> SignalHandlers_;
+
+    TDeadlineQueue DeadlineQueue_;
 
     std::shared_ptr<spdlog::logger> Logger_;
 };

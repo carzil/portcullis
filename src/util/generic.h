@@ -31,7 +31,7 @@ class TResult {
 public:
     static TResult<T> MakeFail(int status) {
         TResult<T> res;
-        res.Error_ = static_cast<uint64_t>(status) << 1;
+        res.Error_ = static_cast<uint64_t>(status) << 2;
         return res;
     }
 
@@ -48,6 +48,12 @@ public:
         return res;
     }
 
+    static TResult<T> MakeTimedOut() {
+        TResult<T> res;
+        res.Error_ = 2;
+        return res;
+    }
+
     /*
      * Forwards error from result `other`.
      */
@@ -59,11 +65,15 @@ public:
     }
 
     int Error() const {
-        return Error_ >> 1;
+        return Error_ >> 2;
     }
 
-    bool Canceled() {
+    bool Canceled() const {
         return Error_ & 1;
+    }
+
+    bool TimedOut() const {
+        return Error_ & 2;
     }
 
     const T& Result() const {

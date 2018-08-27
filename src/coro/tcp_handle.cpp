@@ -10,9 +10,9 @@ TTcpHandlePtr TTcpHandle::Create() {
     return std::make_shared<TTcpHandle>(Reactor(), fd);
 }
 
-TResult<TTcpHandlePtr> TTcpHandle::Accept() {
+TResult<TTcpHandlePtr> TTcpHandle::Accept(TReactor::TDeadline deadline) {
     TSocketAddress addr;
-    TResult<int> fd = Reactor()->Accept(Fd(), &addr);
+    TResult<int> fd = Reactor()->Accept(Fd(), &addr, deadline);
     if (!fd) {
         return TResult<TTcpHandlePtr>::ForwardError(fd);
     }
@@ -21,8 +21,8 @@ TResult<TTcpHandlePtr> TTcpHandle::Accept() {
     return TResult<TTcpHandlePtr>::MakeSuccess(accepted);
 }
 
-TResult<bool> TTcpHandle::Connect(const TSocketAddress& addr) {
-    return Reactor()->Connect(Fd(), addr);
+TResult<bool> TTcpHandle::Connect(const TSocketAddress& addr, TReactor::TDeadline deadline) {
+    return Reactor()->Connect(Fd(), addr, deadline);
 }
 
 void TTcpHandle::ShutdownAll() {

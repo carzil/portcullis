@@ -130,7 +130,7 @@ void TReactor::Wakeup(TCoroutine* coro) {
     }
 }
 
-TResult<int> TReactor::WaitFor(int fd, uint32_t events) {
+TResult<int> TReactor::WaitFor(int fd, uint32_t events, TDeadline deadline) {
     ASSERT(fd < static_cast<int>(WaitState_.size()));
 
     if (CurrentCoro->Canceled) {
@@ -156,9 +156,27 @@ TResult<int> TReactor::WaitFor(int fd, uint32_t events) {
         WaitState_[fd].Writer = CurrentCoro;
     }
 
-    SPDLOG_DEBUG(Logger_, "{} starts WaitFor(fd={}, events={})", reinterpret_cast<void*>(CurrentCoro), fd, events);
+    SPDLOG_DEBUG(Logger_, "{} starts WaitFor(fd={}, events={}, deadline={})", reinterpret_cast<void*>(CurrentCoro), fd, events, timeout);
+
+    if (deadline != TDeadline::max()) {
+        CurrentCoro->DeadlineReached = false;
+        CurrentCoro->Deadline = deadline;
+        DeadlineQueue_.Push(CurrentCoro);
+    }
 
     SwitchCoroutine();
+
+    if (CurrentCoro->DeadlineReached) {
+        SPDLOG_DEBUG(Logger_, "{} deadline reached while WaitFor(fd={}, events={})", reinterpret_cast<void*>(CurrentCoro), fd, events);
+        if (events & TReactor::EvRead) {
+            WaitState_[fd].Reader = nullptr;
+        }
+
+        if (events & TReactor::EvWrite) {
+            WaitState_[fd].Writer = nullptr;
+        }
+        return TResult<int>::MakeTimedOut();
+    }
 
     if (CurrentCoro->Canceled) {
         SPDLOG_DEBUG(Logger_, "{} canceled in WaitFor", reinterpret_cast<void*>(CurrentCoro));
@@ -209,10 +227,10 @@ void TReactor::OnSignals(TSignalSet signals, TSignalHandler handler) {
     }
 }
 
-TResult<size_t> TReactor::Read(int fd, void* to, size_t sz) {
+TResult<size_t> TReactor::Read(int fd, void* to, size_t sz, TDeadline deadline) {
     ASSERT(sz > 0);
     while (true) {
-        TResult<int> eventsMask = Reactor()->WaitFor(fd, TReactor::EvRead);
+        TResult<int> eventsMask = Reactor()->WaitFor(fd, TReactor::EvRead, deadline);
         if (!eventsMask) {
             return TResult<size_t>::ForwardError(eventsMask);
         }
@@ -231,10 +249,10 @@ TResult<size_t> TReactor::Read(int fd, void* to, size_t sz) {
     }
 }
 
-TResult<size_t> TReactor::Write(int fd, const void* from, size_t sz) {
+TResult<size_t> TReactor::Write(int fd, const void* from, size_t sz, TDeadline deadline) {
     ASSERT(sz > 0);
     while (true) {
-        TResult<int> eventsMask = Reactor()->WaitFor(fd, TReactor::EvWrite);
+        TResult<int> eventsMask = Reactor()->WaitFor(fd, TReactor::EvWrite, deadline);
         if (!eventsMask) {
             return TResult<size_t>::ForwardError(eventsMask);
         }
@@ -253,9 +271,9 @@ TResult<size_t> TReactor::Write(int fd, const void* from, size_t sz) {
     }
 }
 
-TResult<int> TReactor::Accept(int fd, TSocketAddress* sockAddr) {
+TResult<int> TReactor::Accept(int fd, TSocketAddress* sockAddr, TDeadline deadline) {
     while (true) {
-        TResult<int> eventsMask = Reactor()->WaitFor(fd, TReactor::EvRead);
+        TResult<int> eventsMask = Reactor()->WaitFor(fd, TReactor::EvRead, deadline);
         if (!eventsMask) {
             return TResult<int>::ForwardError(eventsMask);
         }
@@ -277,13 +295,13 @@ TResult<int> TReactor::Accept(int fd, TSocketAddress* sockAddr) {
     }
 }
 
-TResult<bool> TReactor::Connect(int fd, const TSocketAddress& addr) {
+TResult<bool> TReactor::Connect(int fd, const TSocketAddress& addr, TDeadline deadline) {
     int res = ::connect(fd, addr.AddressAs<const sockaddr*>(), addr.Length());
     if (res == -1) {
         if (errno == EINPROGRESS) {
             WaitState_[fd].ReadyEvents &= ~TReactor::EvWrite;
 
-            TResult<int> eventsMask = WaitFor(fd, TReactor::EvWrite);
+            TResult<int> eventsMask = WaitFor(fd, TReactor::EvWrite, deadline);
             if (!eventsMask) {
                 return TResult<bool>::ForwardError(eventsMask);
             }
@@ -340,6 +358,12 @@ void TReactor::DoPoll() {
 
     if (ScheduledCoroutines_.size() != 0) {
         timeout = 0;
+    } else if (!DeadlineQueue_.Empty()) {
+        if (DeadlineQueue_.Top()->Deadline <= std::chrono::steady_clock::now()) {
+            timeout = 0;
+        } else {
+            timeout = std::chrono::duration_cast<std::chrono::milliseconds>(DeadlineQueue_.Top()->Deadline - std::chrono::steady_clock::now()).count();
+        }
     }
 
     int res = 0;
@@ -382,6 +406,12 @@ void TReactor::DoPoll() {
             }
         }
     }
+
+    while (!DeadlineQueue_.Empty() && DeadlineQueue_.Top()->Deadline <= std::chrono::steady_clock::now()) {
+        TCoroutine* coro = DeadlineQueue_.Peek();
+        coro->DeadlineReached = true;
+        coro->Wakeup();
+    }
 }
 
 void TReactor::RegisterNonBlockingFd(int fd) {
@@ -411,6 +441,7 @@ void TReactor::CloseFd(int fd) {
 
 void TReactor::Cancel(TCoroutine* coro) {
     SPDLOG_DEBUG(Logger_, "cancel {}", reinterpret_cast<void*>(coro));
+    DeadlineQueue_.Remove(coro);
     coro->Canceled = true;
     coro->Wakeup();
 }
@@ -452,4 +483,41 @@ TResult<bool> TReactor::AwaitAll(std::initializer_list<TCoroutine*> coros) {
     SPDLOG_DEBUG(Logger_, "{} done awaiting", reinterpret_cast<void*>(CurrentCoro));
 
     return TResult<bool>::MakeSuccess(true);
+}
+
+static inline size_t Parent(size_t idx) {
+    return (idx - 1) / 2;
+}
+
+static inline size_t LeftChild(size_t idx) {
+    return idx * 2 + 1;
+}
+
+static inline size_t RightChild(size_t idx) {
+    return idx * 2 + 2;
+}
+
+void TReactor::TDeadlineQueue::SiftUp(size_t idx) {
+    while (idx > 0 && Queue_[idx]->Deadline < Queue_[Parent(idx)]->Deadline) {
+        Swap(idx, Parent(idx));
+        idx = Parent(idx);
+    }
+}
+
+void TReactor::TDeadlineQueue::SiftDown(size_t idx) {
+    while (LeftChild(idx) < Queue_.size()) {
+        size_t j = LeftChild(idx);
+
+        if (RightChild(idx) < Queue_.size() &&
+            Queue_[RightChild(idx)]->Deadline < Queue_[LeftChild(idx)]->Deadline) {
+            j = RightChild(idx);
+        }
+
+        if (Queue_[idx]->Deadline <= Queue_[j]->Deadline) {
+            break;
+        }
+
+        Swap(idx, j);
+        idx = j;
+    }
 }

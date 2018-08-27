@@ -29,34 +29,34 @@ void THandle::Close() {
     }
 }
 
-TResult<size_t> THandle::Read(TMemoryRegion region) {
-    return Reactor()->Read(Fd(), region.Data(), region.Size());
+TResult<size_t> THandle::Read(TMemoryRegion region, TReactor::TDeadline deadline) {
+    return Reactor()->Read(Fd(), region.Data(), region.Size(), deadline);
 }
 
-TResult<size_t> THandle::Read(TSocketBuffer& to, size_t size) {
+TResult<size_t> THandle::Read(TSocketBuffer& to, size_t size, TReactor::TDeadline deadline) {
     size = std::min(size, to.Remaining());
-    TResult<size_t> res = Reactor()->Read(Fd(), to.End(), to.Remaining());
+    TResult<size_t> res = Reactor()->Read(Fd(), to.End(), to.Remaining(), deadline);
     if (res) {
         to.Advance(res.Result());
     }
     return res;
 }
 
-TResult<size_t> THandle::Write(TMemoryRegion region) {
-    return Reactor()->Write(Fd(), region.Data(), region.Size());
+TResult<size_t> THandle::Write(TMemoryRegion region, TReactor::TDeadline deadline) {
+    return Reactor()->Write(Fd(), region.Data(), region.Size(), deadline);
 }
 
-TResult<size_t> THandle::Write(TMemoryRegionChain& chain) {
-    TResult<size_t> res = Write(chain.CurrentMemoryRegion());
+TResult<size_t> THandle::Write(TMemoryRegionChain& chain, TReactor::TDeadline deadline) {
+    TResult<size_t> res = Write(chain.CurrentMemoryRegion(), deadline);
     if (res) {
         chain.Advance(res.Result());
     }
     return res;
 }
 
-TResult<size_t> THandle::Transfer(THandle& to, TSocketBuffer& buffer, size_t bytesCount) {
+TResult<size_t> THandle::Transfer(THandle& to, TSocketBuffer& buffer, size_t bytesCount, TReactor::TDeadline deadline) {
     ASSERT(buffer.Empty());
-    TResult<size_t> res = Read(buffer, bytesCount);
+    TResult<size_t> res = Read(buffer, bytesCount, deadline);
 
     if (!res) {
         return res;
@@ -70,7 +70,7 @@ TResult<size_t> THandle::Transfer(THandle& to, TSocketBuffer& buffer, size_t byt
 
     TMemoryRegion region = buffer.CurrentMemoryRegion();
     while (!region.Empty()) {
-        res = to.Write(region);
+        res = to.Write(region, deadline);
         if (!res) {
             return res;
         }
