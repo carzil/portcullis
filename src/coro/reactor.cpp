@@ -130,7 +130,19 @@ void TReactor::Wakeup(TCoroutine* coro) {
     }
 }
 
-TResult<int> TReactor::WaitFor(int fd, uint32_t events, TDeadline deadline) {
+void TReactor::UpdateWaitState(int fd, uint32_t events, TCoroutine* value) {
+    if (events & TReactor::EvRead) {
+        ASSERT(!WaitState_[fd].Reader);
+        WaitState_[fd].Reader = value;
+    }
+
+    if (events & TReactor::EvWrite) {
+        ASSERT(!WaitState_[fd].Writer);
+        WaitState_[fd].Writer = value;
+    }
+}
+
+TResult<int> TReactor::WaitFor(int fd, uint32_t waitEvents, TDeadline deadline) {
     ASSERT(fd < static_cast<int>(WaitState_.size()));
 
     if (CurrentCoro->Canceled) {
@@ -138,25 +150,17 @@ TResult<int> TReactor::WaitFor(int fd, uint32_t events, TDeadline deadline) {
         return TResult<int>::MakeCanceled();
     }
 
-    int readyMask = WaitState_[fd].ReadyEvents & events;
-    if (WaitState_[fd].ReadyEvents & events) {
+    int readyMask = WaitState_[fd].ReadyEvents & waitEvents;
+    if (WaitState_[fd].ReadyEvents & waitEvents) {
         SPDLOG_DEBUG(Logger_, "{} woken up immediately", reinterpret_cast<void*>(CurrentCoro));
         return TResult<int>::MakeSuccess(readyMask);
     }
 
-    WaitState_[fd].ReadyEvents &= ~events;
+    WaitState_[fd].ReadyEvents &= ~waitEvents;
 
-    if (events & TReactor::EvRead) {
-        ASSERT(!WaitState_[fd].Reader);
-        WaitState_[fd].Reader = CurrentCoro;
-    }
+    UpdateWaitState(fd, waitEvents, CurrentCoro);
 
-    if (events & TReactor::EvWrite) {
-        ASSERT(!WaitState_[fd].Writer);
-        WaitState_[fd].Writer = CurrentCoro;
-    }
-
-    SPDLOG_DEBUG(Logger_, "{} starts WaitFor(fd={}, events={}, deadline={})", reinterpret_cast<void*>(CurrentCoro), fd, events, timeout);
+    SPDLOG_DEBUG(Logger_, "{} starts WaitFor(fd={}, waitEvents={}, deadline={})", reinterpret_cast<void*>(CurrentCoro), fd, events, timeout);
 
     if (deadline != TDeadline::max()) {
         CurrentCoro->DeadlineReached = false;
@@ -167,40 +171,22 @@ TResult<int> TReactor::WaitFor(int fd, uint32_t events, TDeadline deadline) {
     SwitchCoroutine();
 
     if (CurrentCoro->DeadlineReached) {
-        SPDLOG_DEBUG(Logger_, "{} deadline reached while WaitFor(fd={}, events={})", reinterpret_cast<void*>(CurrentCoro), fd, events);
-        if (events & TReactor::EvRead) {
-            WaitState_[fd].Reader = nullptr;
-        }
-
-        if (events & TReactor::EvWrite) {
-            WaitState_[fd].Writer = nullptr;
-        }
+        SPDLOG_DEBUG(Logger_, "{} deadline reached while WaitFor(fd={}, waitEvents={})", reinterpret_cast<void*>(CurrentCoro), fd, events);
+        UpdateWaitState(fd, waitEvents, nullptr);
         return TResult<int>::MakeTimedOut();
     }
 
     if (CurrentCoro->Canceled) {
         SPDLOG_DEBUG(Logger_, "{} canceled in WaitFor", reinterpret_cast<void*>(CurrentCoro));
-        if (events & TReactor::EvRead) {
-            WaitState_[fd].Reader = nullptr;
-        }
-
-        if (events & TReactor::EvWrite) {
-            WaitState_[fd].Writer = nullptr;
-        }
+        UpdateWaitState(fd, waitEvents, nullptr);
         return TResult<int>::MakeCanceled();
     }
 
     SPDLOG_DEBUG(Logger_, "{} woken up", reinterpret_cast<void*>(CurrentCoro));
 
-    if (events & TReactor::EvRead) {
-        WaitState_[fd].Reader = nullptr;
-    }
+    UpdateWaitState(fd, waitEvents, nullptr);
 
-    if (events & TReactor::EvWrite) {
-        WaitState_[fd].Writer = nullptr;
-    }
-
-    readyMask = WaitState_[fd].ReadyEvents & events;
+    readyMask = WaitState_[fd].ReadyEvents & waitEvents;
     ASSERT(readyMask != 0);
     return TResult<int>::MakeSuccess(readyMask);
 }

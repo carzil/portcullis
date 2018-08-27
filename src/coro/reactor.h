@@ -104,6 +104,7 @@ public:
             Queue_.push_back(coro);
             SiftUp(Queue_.size() - 1);
         }
+
         void Remove(TCoroutine* coro) {
             ASSERT(coro->PosInDeadlineQueue != -1);
             Queue_[coro->PosInDeadlineQueue] = Queue_.back();
@@ -249,6 +250,8 @@ private:
         TCoroutine* Writer;
         TCoroutine* Reader;
     };
+
+    void UpdateWaitState(int fd, uint32_t events, TCoroutine* value);
 
     void Finish(TCoroutine*);
 
