@@ -70,6 +70,7 @@ public:
         bool DeadlineReached = false;
 
         TCoroutine* Awaiter = nullptr;
+        size_t AwaitsFinished = 0;
 
         /* for deadline queue */
         TDeadline Deadline;

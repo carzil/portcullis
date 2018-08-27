@@ -65,6 +65,7 @@ void TReactor::Finish(TCoroutine* coro) {
     }
 
     if (awaiter) {
+        awaiter->AwaitsFinished++;
         awaiter->Wakeup();
     }
 
@@ -456,6 +457,7 @@ TResult<bool> TReactor::AwaitAll(std::initializer_list<TCoroutine*> coros) {
 
     size_t finishedCoroutines = 0;
     while (finishedCoroutines < coros.size()) {
+        CurrentCoro->AwaitsFinished = 0;
         SwitchCoroutine(false);
 
         if (CurrentCoro->Canceled) {
@@ -468,7 +470,7 @@ TResult<bool> TReactor::AwaitAll(std::initializer_list<TCoroutine*> coros) {
             return TResult<bool>::MakeCanceled();
         }
 
-        finishedCoroutines++;
+        finishedCoroutines += CurrentCoro->AwaitsFinished;
     }
 
     SPDLOG_DEBUG(Logger_, "{} done awaiting", reinterpret_cast<void*>(CurrentCoro));
