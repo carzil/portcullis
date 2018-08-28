@@ -46,15 +46,13 @@ public:
         {
         }
 
-        void Wakeup() {
-            Reactor->Wakeup(this);
-        }
-
         void Cancel() {
+            ASSERT(Reactor);
             Reactor->Cancel(this);
         }
 
         void Await() {
+            ASSERT(Reactor);
             Reactor->Await(this);
         }
 
@@ -65,9 +63,11 @@ public:
 
         /* TODO: flags */
         bool Started = false;
-        bool Awake = false;
+        bool Wakedup = false;
         bool Canceled = false;
         bool DeadlineReached = false;
+        bool Finished = false;
+        bool Awaitable = false;
 
         TCoroutine* Awaiter = nullptr;
 
@@ -75,7 +75,8 @@ public:
         TDeadline Deadline;
         size_t PosInDeadlineQueue = -1;
 
-        /* Iterator in ActiveCoroutines_ list for fast removal */
+        /* holding an iterator in ActiveCoroutines_ or ZombieCoroutines lists
+         * for fast removal */
         std::list<std::unique_ptr<TCoroutine>>::iterator ListIter;
     };
 
@@ -139,16 +140,34 @@ public:
     TReactor(std::shared_ptr<spdlog::logger> logger);
 
     /*
-     * Schedules execution of coroutine.
+     * Start a new coroutine. On exit, coroutine will be destroyed.
      * @param entry -- coroutine's entry point.
      */
-    TCoroutine* StartCoroutine(TCoroEntry);
+    void StartCoroutine(TCoroEntry entry) {
+        StartCoroutine(std::move(entry), false);
+    }
 
     /*
-     * Waits for finish of `coro`.
+     * Starts a new coroutine. On exit, coroutine will be placed in
+     * zombie list, until Await performed on it.
+     * @param entry -- coroutine's entry point.
+     */
+    TCoroutine* StartAwaitableCoroutine(TCoroEntry entry) {
+        return StartCoroutine(std::move(entry), true);
+    }
+
+    /*
+     * Awaits all given coroutines in a safe manner.
      * If coroutine canceled while awaiting awaited coroutine is also canceled.
      */
-    TResult<bool> Await(TCoroutine* coro);
+    TResult<bool> AwaitAll(std::vector<TCoroutine*> coroutines);
+
+    /*
+     * Awaits for finish of `coro`.
+     */
+    TResult<bool> Await(TCoroutine* coro) {
+        return AwaitAll({ std::move(coro) });
+    }
 
     /*
      * After call of this method reactor will run,
@@ -245,6 +264,8 @@ private:
         TCoroutine* Reader;
     };
 
+    TCoroutine* StartCoroutine(TCoroEntry entry, bool awaitable);
+
     void UpdateWaitState(int fd, uint32_t events, TCoroutine* value);
 
     void Finish(TCoroutine*);
@@ -257,10 +278,18 @@ private:
 
     static void CoroWrapper();
 
+    /* all sleeping, running or scheduled coroutines is placed here */
     std::list<std::unique_ptr<TCoroutine>> ActiveCoroutines_;
+
+    /* each exited awaitable coroutine is placed here */
+    std::list<std::unique_ptr<TCoroutine>> ZombieCoroutines_;
+
+    std::unique_ptr<TCoroutine> FinishedCoroutine_;
+
     std::list<TCoroutine*> ScheduledCoroutines_;
     std::list<TCoroutine*> ScheduledNextCoroutines_;
-    std::list<std::unique_ptr<TCoroutine>> FinishedCoroutines_;
+
+    /* fake coroutine holding initial context where TReactor::Run was called */
     TCoroutine InitialCoro_;
 
     ssize_t EpollFd_ = InvalidFd;

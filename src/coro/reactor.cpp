@@ -15,10 +15,15 @@ TReactor* Reactor() {
  * Wrapper for launching coroutine.
  */
 void TReactor::CoroWrapper() {
+    /* if coroutine has not performed SwitchCouroutine */
+    Reactor()->FinishedCoroutine_ = nullptr;
+
     TCoroutine* coro = CurrentCoro;
     coro->Context.OnStart();
     /* unhandled exception here leads to std::terminate */
     coro->Entry();
+    /* free resources holded by entry */
+    coro->Entry = nullptr;
     coro->Reactor->Finish(coro);
 }
 
@@ -37,43 +42,62 @@ TReactor::TReactor(std::shared_ptr<spdlog::logger> logger)
 }
 
 TCoroutine* TReactor::Current() const {
+    ASSERT(CurrentCoro);
     return CurrentCoro;
 }
 
-TCoroutine* TReactor::StartCoroutine(TCoroEntry entry) {
+TCoroutine* TReactor::StartCoroutine(TCoroEntry entry, bool awaitable) {
     std::unique_ptr<TCoroutine> coro = std::make_unique<TCoroutine>(this, std::move(entry));
     TCoroutine* coroPtr = coro.get();
     ScheduledNextCoroutines_.push_back(coroPtr);
     ActiveCoroutines_.push_back(std::move(coro));
     coroPtr->ListIter = std::next(ActiveCoroutines_.end(), -1);
+    coroPtr->Awaitable = awaitable;
     SPDLOG_DEBUG(Logger_, "started coroutine {}", reinterpret_cast<void*>(coroPtr));
     return coroPtr;
 }
 
 void TReactor::Finish(TCoroutine* coro) {
-    TCoroutine* awaiter = coro->Awaiter;
-    TSavedContext oldContext = CurrentCoro->Context;
+    ASSERT(CurrentCoro == coro);
+    ASSERT(!FinishedCoroutine_);
+    ASSERT(coro->PosInDeadlineQueue == -1);
 
-    FinishedCoroutines_.push_back(std::move(*coro->ListIter));
-    ActiveCoroutines_.erase(coro->ListIter);
+    if (coro->Awaitable) {
+        std::unique_ptr<TCoroutine>& zombie = ZombieCoroutines_.emplace_back(std::move(*coro->ListIter));
+        ASSERT(zombie.get() == coro);
+        ActiveCoroutines_.erase(coro->ListIter);
+        coro->ListIter = std::next(ZombieCoroutines_.end(), -1);
+    } else {
+        /*
+         * Coroutine destroying leads to stack unmapping, so coroutine is going
+         * to be deleted after performing SwitchCoroutine.
+         */
+        FinishedCoroutine_ = std::move(*coro->ListIter);
+        ASSERT(FinishedCoroutine_.get() == coro);
+        ActiveCoroutines_.erase(coro->ListIter);
+    }
 
+    coro->Finished = true;
     SPDLOG_DEBUG(Logger_, "{} finished", reinterpret_cast<void*>(coro));
 
     if (ActiveCoroutines_.empty()) {
         SPDLOG_DEBUG(Logger_, "no active coroutines left");
-        oldContext.SwitchTo(InitialCoro_.Context, nullptr, 0, true);
+        coro->Context.SwitchTo(InitialCoro_.Context, nullptr, 0, true);
     }
 
-    if (awaiter) {
-        awaiter->Wakeup();
+    if (coro->Awaiter) {
+        Wakeup(coro->Awaiter);
     }
 
     SwitchCoroutine(true);
+
+    ASSERT(false);
 }
 
 void TReactor::Yield() {
+    ASSERT(!CurrentCoro->Finished);
     SPDLOG_DEBUG(Logger_, "{} yielded", reinterpret_cast<void*>(CurrentCoro));
-    ScheduledNextCoroutines_.push_back(CurrentCoro);
+    Wakeup(CurrentCoro);
     SwitchCoroutine(false);
 }
 
@@ -81,14 +105,16 @@ void TReactor::Run() {
     if (ActiveCoroutines_.empty()) {
         return;
     }
+
     CurrentCoro = &InitialCoro_;
     CurrentReactor = this;
     SwitchCoroutine(false);
+
+    /* finish the last one */
+    FinishedCoroutine_ = nullptr;
 }
 
 void TReactor::SwitchCoroutine(bool exitOld) {
-    CurrentCoro->Awake = false;
-
     if (ScheduledCoroutines_.empty()) {
         if (!ScheduledNextCoroutines_.empty()) {
             ScheduledCoroutines_ = std::move(ScheduledNextCoroutines_);
@@ -103,6 +129,8 @@ void TReactor::SwitchCoroutine(bool exitOld) {
 
     TCoroutine* ready = ScheduledCoroutines_.front();
     ScheduledCoroutines_.pop_front();
+
+    ready->Wakedup = false;
 
     if (!ready->Started) {
         ready->Started = true;
@@ -121,15 +149,17 @@ void TReactor::SwitchCoroutine(bool exitOld) {
         exitOld
     );
 
-    FinishedCoroutines_.clear();
+    /* destroy previous coroutine */
+    FinishedCoroutine_ = nullptr;
 }
 
 void TReactor::Wakeup(TCoroutine* coro) {
     ASSERT(coro->Reactor == this);
+    ASSERT(!coro->Finished);
 
-    if (!coro->Awake) {
+    if (!coro->Wakedup) {
         ScheduledNextCoroutines_.push_back(coro);
-        coro->Awake = true;
+        coro->Wakedup = true;
     }
 }
 
@@ -379,14 +409,14 @@ void TReactor::DoPoll() {
             if (events[i].events & EPOLLIN) {
                 WaitState_[fd].ReadyEvents |= TReactor::EvRead;
                 if (WaitState_[fd].Reader) {
-                    WaitState_[fd].Reader->Wakeup();
+                    Wakeup(WaitState_[fd].Reader);
                 }
             }
 
             if (events[i].events & EPOLLOUT) {
                 WaitState_[fd].ReadyEvents |= TReactor::EvWrite;
                 if (WaitState_[fd].Writer) {
-                    WaitState_[fd].Writer->Wakeup();
+                    Wakeup(WaitState_[fd].Writer);
                 }
             }
 
@@ -399,7 +429,7 @@ void TReactor::DoPoll() {
     while (!DeadlineQueue_.Empty() && DeadlineQueue_.Top()->Deadline <= std::chrono::steady_clock::now()) {
         TCoroutine* coro = DeadlineQueue_.Peek();
         coro->DeadlineReached = true;
-        coro->Wakeup();
+        Wakeup(coro);
     }
 }
 
@@ -416,11 +446,11 @@ void TReactor::CloseFd(int fd) {
     SPDLOG_DEBUG(Logger_, "fd={} closed", fd);
 
     if (WaitState_[fd].Writer) {
-        WaitState_[fd].Writer->Wakeup();
+        Wakeup(WaitState_[fd].Writer);
     }
 
     if (WaitState_[fd].Reader) {
-        WaitState_[fd].Reader->Wakeup();
+        Wakeup(WaitState_[fd].Reader);
     }
 
     WaitState_[fd].Writer = nullptr;
@@ -430,11 +460,16 @@ void TReactor::CloseFd(int fd) {
 
 void TReactor::Cancel(TCoroutine* coro) {
     SPDLOG_DEBUG(Logger_, "cancel {}", reinterpret_cast<void*>(coro));
+
+    if (coro->Finished) {
+        return;
+    }
+
     if (coro->PosInDeadlineQueue != TDeadlineQueue::InvalidPos) {
         DeadlineQueue_.Remove(coro);
     }
     coro->Canceled = true;
-    coro->Wakeup();
+    Wakeup(coro);
 }
 
 void TReactor::CancelAll() {
@@ -443,27 +478,55 @@ void TReactor::CancelAll() {
     }
 }
 
-TResult<bool> TReactor::Await(TCoroutine* coro) {
-    ASSERT(coro != CurrentCoro);
-    ASSERT(!coro->Awaiter);
+TResult<bool> TReactor::AwaitAll(std::vector<TCoroutine*> coros) {
+    for (TCoroutine* coro : coros) {
+        ASSERT(coro != CurrentCoro);
+        ASSERT(!coro->Awaiter);
+        ASSERT(coro->Awaitable);
+    }
 
     if (CurrentCoro->Canceled) {
-        coro->Cancel();
+        for (TCoroutine* coro : coros) {
+            coro->Awaiter = nullptr;
+            coro->Cancel();
+        }
         return TResult<bool>::MakeCanceled();
     }
 
-    coro->Awaiter = CurrentCoro;
+    for (TCoroutine* coro : coros) {
+        coro->Awaiter = CurrentCoro;
+    }
 
-    SwitchCoroutine(false);
+    SPDLOG_DEBUG(Logger_, "{} begins AwaitAll", reinterpret_cast<void*>(CurrentCoro));
+
+    bool allFinished = false;
+    while (!CurrentCoro->Canceled) {
+        allFinished = true;
+        for (TCoroutine* coro : coros) {
+            if (!coro->Finished) {
+                allFinished = false;
+                break;
+            }
+        }
+
+        if (allFinished) {
+            break;
+        }
+
+        SwitchCoroutine(false);
+    }
 
     if (CurrentCoro->Canceled) {
-        coro->Awaiter = nullptr;
-        coro->Cancel();
-        SPDLOG_DEBUG(Logger_, "canceled {} due to canceling {}", reinterpret_cast<void*>(coro), reinterpret_cast<void*>(CurrentCoro));
+        for (TCoroutine* coro : coros) {
+            /* prevent use-after-free */
+            coro->Awaiter = nullptr;
+            coro->Cancel();
+            SPDLOG_DEBUG(Logger_, "canceled {} due to canceling {}", reinterpret_cast<void*>(coro), reinterpret_cast<void*>(CurrentCoro));
+        }
         return TResult<bool>::MakeCanceled();
     }
 
-    SPDLOG_DEBUG(Logger_, "{} done awaiting", reinterpret_cast<void*>(CurrentCoro));
+    SPDLOG_DEBUG(Logger_, "{} done AwaitAll", reinterpret_cast<void*>(CurrentCoro));
 
     return TResult<bool>::MakeSuccess(true);
 }

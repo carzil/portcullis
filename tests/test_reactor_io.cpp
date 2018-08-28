@@ -79,7 +79,7 @@ TEST_F(ReactorIoTest, TestWrite) {
 }
 
 TEST_F(ReactorIoTest, TestEcho) {
-    TCoroutine* echoCoroutine = Reactor_.StartCoroutine([this]() {
+    TCoroutine* echoCoroutine = Reactor_.StartAwaitableCoroutine([this]() {
         while (true) {
             int count = 0;
             TResult<size_t> res = Reactor()->Read(Pipe1_[0], &count, sizeof(count));

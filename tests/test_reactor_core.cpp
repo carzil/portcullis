@@ -35,7 +35,7 @@ TEST(ReactorCoreTest, Await) {
 
     bool awaitDone = false;
 
-    TCoroutine* a = reactor.StartCoroutine([&awaitDone]() {
+    TCoroutine* a = reactor.StartAwaitableCoroutine([&awaitDone]() {
         Reactor()->Yield();
         EXPECT_FALSE(awaitDone);
 
@@ -54,18 +54,85 @@ TEST(ReactorCoreTest, Await) {
 TEST(ReactorCoreTest, AwaitCancelsAwaitedCoroutine) {
     TReactor reactor(spdlog::get("reactor"));
 
-    TCoroutine* a = reactor.StartCoroutine([]() {
+    TCoroutine* a = reactor.StartAwaitableCoroutine([]() {
         while (!Reactor()->Current()->Canceled) {
             Reactor()->Yield();
         }
     });
 
-    TCoroutine* b = reactor.StartCoroutine([a]() {
+    TCoroutine* b = reactor.StartAwaitableCoroutine([a]() {
         Reactor()->Await(a);
     });
 
     reactor.StartCoroutine([b]() {
         b->Cancel();
+        b->Await();
+    });
+
+    reactor.Run();
+}
+
+TEST(ReactorCoreTest, AwaitAll) {
+    TReactor reactor(spdlog::get("reactor"));
+
+    bool awaitDone = false;
+
+    TCoroutine* a = reactor.StartAwaitableCoroutine([&awaitDone]() {
+        /* immediately exits  */
+        EXPECT_FALSE(awaitDone);
+    });
+
+    TCoroutine* b = reactor.StartAwaitableCoroutine([&awaitDone]() {
+        EXPECT_FALSE(awaitDone);
+        Reactor()->Yield();
+        EXPECT_FALSE(awaitDone);
+    });
+
+    TCoroutine* c = reactor.StartAwaitableCoroutine([&awaitDone]() {
+        EXPECT_FALSE(awaitDone);
+        Reactor()->Yield();
+        EXPECT_FALSE(awaitDone);
+        Reactor()->Yield();
+        EXPECT_FALSE(awaitDone);
+    });
+
+    reactor.StartCoroutine([a, b, c, &awaitDone]() {
+        TCoroutine* d = Reactor()->StartAwaitableCoroutine([&awaitDone]() {
+            /* immediately exits  */
+            EXPECT_FALSE(awaitDone);
+        });
+
+        Reactor()->AwaitAll({ a, b, c, d });
+        awaitDone = true;
+    });
+
+    reactor.Run();
+
+    EXPECT_TRUE(awaitDone);
+}
+
+TEST(ReactorCoreTest, AwaitAllCancelsAwaitedCoroutines) {
+    TReactor reactor(spdlog::get("reactor"));
+
+    TCoroutine* a = reactor.StartAwaitableCoroutine([]() {
+        while (!Reactor()->Current()->Canceled) {
+            Reactor()->Yield();
+        }
+    });
+
+    TCoroutine* b = reactor.StartAwaitableCoroutine([]() {
+        while (!Reactor()->Current()->Canceled) {
+            Reactor()->Yield();
+        }
+    });
+
+    TCoroutine* c = reactor.StartAwaitableCoroutine([a, b]() {
+        Reactor()->AwaitAll({ a, b });
+    });
+
+    reactor.StartCoroutine([c]() {
+        c->Cancel();
+        c->Await();
     });
 
     reactor.Run();
@@ -124,6 +191,7 @@ TEST(ReactorCoreTest, MultipleSignalHandlerCalled) {
 
 int main(int argc, char* argv[]) {
     auto logger = spdlog::stdout_color_mt("reactor");
+    logger->set_level(spdlog::level::debug);
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
