@@ -97,6 +97,11 @@ private:
     T Result_;
 };
 
+inline std::string ErrorDescription(int err) {
+    char error[1024];
+    return std::string(strerror_r(err, error, sizeof(error)));
+}
+
 #define ThrowErr(err, expr)  \
     char error[1024]; \
     throw (TException() << expr) << ": " << strerror_r(err, error, sizeof(error));
