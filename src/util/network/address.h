@@ -11,9 +11,6 @@ public:
     TSocketAddress();
     TSocketAddress(const sockaddr* sa, size_t len);
 
-    void InitPort();
-    void InitHost();
-
     uint16_t Port() const;
     std::string Host() const;
 
@@ -35,6 +32,14 @@ public:
         return Len_;
     }
 
+    bool Ipv6() const {
+        return Addr_.ss_family == AF_INET6;
+    }
+
+    bool Ipv4() const {
+        return Addr_.ss_family == AF_INET;
+    }
+
     bool operator==(const TSocketAddress& other) const;
     bool operator!=(const TSocketAddress& other) const {
         return !(*this == other);
@@ -45,5 +50,16 @@ private:
     socklen_t Len_;
 };
 
-std::vector<TSocketAddress> GetAddrInfo(const std::string& host, const std::string& service, bool listener, const std::string& protocol);
-TSocketAddress Resolve(const std::string& addressString);
+enum EIpVersionMode {
+    V4_AND_V6 = 0,
+    V4_ONLY = 1,
+    V6_ONLY = 2,
+};
+
+std::vector<TSocketAddress> GetAddrInfo(const std::string& host, const std::string& service, bool listener, const std::string& protocol, EIpVersionMode = V4_AND_V6);
+
+TSocketAddress Resolve(const std::string& addressString, EIpVersionMode mode);
+
+TSocketAddress ResolveV46(const std::string& addressString);
+TSocketAddress ResolveV4(const std::string& addressString);
+TSocketAddress ResolveV6(const std::string& addressString);

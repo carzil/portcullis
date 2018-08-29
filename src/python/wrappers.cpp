@@ -48,11 +48,13 @@ void TTcpHandleWrapper::WriteAll(std::string_view buf) {
     }
 }
 
-void TTcpHandleWrapper::Connect(TSocketAddress addr) {
-    TResult<bool> res = Handle_->Connect(addr);
+TTcpHandleWrapper TTcpHandleWrapper::Connect(TContextPtr context, TSocketAddress addr) {
+    TTcpHandlePtr handle = TTcpHandle::Create(addr.Ipv6());
+    TResult<bool> res = handle->Connect(addr);
     if (!res) {
         ThrowErr(res.Error(), "connect failed");
     }
+    return TTcpHandleWrapper(std::move(context), std::move(handle));
 }
 
 size_t TTcpHandleWrapper::Transfer(TTcpHandleWrapper other, size_t size) {

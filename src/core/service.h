@@ -12,13 +12,14 @@ namespace py = pybind11;
 
 class TService {
 public:
-    TService(const std::string& configPath);
+    TService(std::shared_ptr<spdlog::logger> logger, const std::string& configPath);
     void Start();
 
 private:
     std::shared_ptr<TContext> ReloadContext();
 
+    std::shared_ptr<spdlog::logger> Logger_;
     std::shared_ptr<TContext> Context_;
-    TTcpHandlePtr Listener_;
+    TTcpListener Listener_;
     std::string ConfigPath_;
 };

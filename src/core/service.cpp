@@ -14,17 +14,17 @@
 
 using namespace std::placeholders;
 
-TService::TService(const std::string& configPath)
+TService::TService(std::shared_ptr<spdlog::logger> logger, const std::string& configPath)
     : ConfigPath_(configPath)
+    , Logger_(std::move(logger))
+    , Listener_(Logger_)
 {
 }
 
 std::shared_ptr<TContext> TService::ReloadContext() {
     std::shared_ptr<TContext> oldContext = std::atomic_load(&Context_);
 
-    auto logger = spdlog::get("main");
-
-    logger->info("loading config from file {}", AbsPath(ConfigPath_));
+    Logger_->info("loading config from file {}", AbsPath(ConfigPath_));
 
     TConfig config = ReadConfigFromFile(ConfigPath_);
 
@@ -34,7 +34,7 @@ std::shared_ptr<TContext> TService::ReloadContext() {
     context->Config = config;
     context->HandlerObject = handlerModule["handler"];
     context->HandlerModule = std::move(handlerModule);
-    context->Logger = logger;
+    context->Logger = Logger_;
 
     context->BackendAddr = GetAddrInfo(
         context->Config.BackendHost,
@@ -61,13 +61,21 @@ void TService::Start() {
     shutdownSignals.Add(SIGINT);
     shutdownSignals.Add(SIGTERM);
 
-    // TODO: multiple bind address
-    TSocketAddress listeningAddress = GetAddrInfo(context->Config.Host, context->Config.Port, true, "tcp")[0];
-    Listener_ = TTcpHandle::Create();
-    Listener_->ReuseAddr();
-    Listener_->Bind(listeningAddress);
-    Listener_->Listen(context->Config.Backlog);
-    context->Logger->info("listening on {}:{}", listeningAddress.Host(), listeningAddress.Port());
+    EIpVersionMode ipVersion = V4_ONLY;
+
+    if (context->Config.AllowIpv6) {
+        if (context->Config.Ipv6Only) {
+            ipVersion = V6_ONLY;
+        } else {
+            ipVersion = V4_AND_V6;
+        }
+    } else if (context->Config.Ipv6Only) {
+        throw TException() << "ipv6_only set but IPv6 is not allowed";
+    }
+
+    std::vector<TSocketAddress> listeningAddresses = GetAddrInfo(context->Config.Host, context->Config.Port, true, "tcp", ipVersion);
+    Listener_.ReuseAddr();
+    Listener_.Bind(listeningAddresses);
 
     Reactor()->OnSignals(shutdownSignals, [this](TSignalInfo info) {
         Context_->Logger->info("caught shutdown signal from pid {}", info.Sender());
@@ -92,34 +100,22 @@ void TService::Start() {
         ::sd_notify(0, "READY=1");
     });
 
-    Reactor()->StartCoroutine([this]() {
-        while (true) {
-            TResult<TTcpHandlePtr> result = Listener_->Accept();
+    Listener_.OnAccepted([this](TTcpHandlePtr accepted) {
+        TContextPtr context = std::atomic_load(&Context_);
+        Reactor()->StartCoroutine([context, accepted]() {
+            try {
+                context->HandlerObject(context, TTcpHandleWrapper(context, accepted));
 
-            if (!result) {
-                if (result.Canceled()) {
-                    break;
-                } else {
-                    ThrowErr(result.Error(), "accept failed");
-                }
+                /* if handler still holds pointer to accepted */
+                accepted->Close();
+            } catch (const std::exception& e) {
+                context->Logger->error("exception in handler: {}", e.what());
+                accepted->Close();
             }
-
-            TTcpHandlePtr accepted = std::move(result.Result());
-
-            TContextPtr context = std::atomic_load(&Context_);
-            Reactor()->StartCoroutine([context, accepted]() {
-                try {
-                    context->HandlerObject(context, TTcpHandleWrapper(context, accepted));
-
-                    /* if handler still holds pointer to accepted */
-                    accepted->Close();
-                } catch (const std::exception& e) {
-                    context->Logger->error("exception in handler: {}", e.what());
-                    accepted->Close();
-                }
-            });
-        }
+        });
     });
+
+    Listener_.Run(context->Config.Backlog);
 
     ::sd_notify(0, "READY=1");
     ::sd_notify(0, "STATUS=Started");

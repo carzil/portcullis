@@ -37,7 +37,9 @@ void InitPortcullisModule(py::module& m) {
 
     py::class_<TContext, TContextPtr>(core, "Context");
 
-    core.def("resolve", Resolve);
+    core.def("resolve", ResolveV46);
+    core.def("resolve_v4", ResolveV4);
+    core.def("resolve_v6", ResolveV6);
 
     py::module helpers = m.def_submodule("helpers");
     LoadPortcullisSubModule(m, "helpers", "helpers.py");

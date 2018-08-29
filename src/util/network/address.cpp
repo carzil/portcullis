@@ -25,7 +25,7 @@ uint16_t TSocketAddress::Port() const {
         case AF_INET6:
             return ntohs(reinterpret_cast<const sockaddr_in6*>(sa)->sin6_port);
         default:
-            throw TException() << "unknown socket familly: " << sa->sa_family;
+            throw TException() << "unknown socket family: " << sa->sa_family;
     };
 }
 
@@ -64,7 +64,7 @@ std::string TSocketAddress::Host() const {
             host = ::inet_ntop(sa->sa_family, &in6->sin6_addr, reinterpret_cast<char*>(&hostStr), sizeof(hostStr));
             break;
         default:
-            throw TException() << "unknown socket familly: " << sa->sa_family;
+            throw TException() << "unknown socket family: " << sa->sa_family;
     };
     if (host) {
         return std::string(host);
@@ -73,22 +73,32 @@ std::string TSocketAddress::Host() const {
     }
 }
 
-std::vector<TSocketAddress> GetAddrInfo(const std::string& host, const std::string& service, bool listener, const std::string& protocol) {
-    int ai_flags = (listener) ? AI_PASSIVE : 0;
+std::vector<TSocketAddress> GetAddrInfo(const std::string& host, const std::string& service, bool listener, const std::string& protocol, EIpVersionMode ipVersion) {
+    int ai_flags = listener ? (AI_PASSIVE | AI_ADDRCONFIG) : 0;
     int ai_protocol = 0;
     int ai_family = 0;
     int ai_socktype = 0;
 
+    switch (ipVersion) {
+        case V4_AND_V6:
+            ai_family = AF_UNSPEC;
+            break;
+        case V6_ONLY:
+            ai_family = AF_INET6;
+            break;
+        case V4_ONLY:
+            ai_family = AF_INET;
+            break;
+        default:
+            ASSERT(false);
+    }
+
     if (protocol == "tcp") {
-        ai_family = AF_INET;
-        ai_protocol = IPPROTO_TCP;
         ai_socktype = SOCK_STREAM;
     } else if (protocol == "udp") {
-        ai_family = AF_INET;
-        ai_protocol = IPPROTO_UDP;
         ai_socktype = SOCK_DGRAM;
     } else {
-        throw TException() << "unkonwn protocol '" << protocol << "'";
+        throw TException() << "unknown protocol '" << protocol << "'";
     }
 
     struct addrinfo* result;
@@ -100,7 +110,7 @@ std::vector<TSocketAddress> GetAddrInfo(const std::string& host, const std::stri
     hints.ai_socktype = ai_socktype;
 
     const char* hostPtr = nullptr;
-    if (host.size()) {
+    if (host.size() > 0) {
         hostPtr = host.c_str();
     }
 
@@ -124,7 +134,7 @@ std::vector<TSocketAddress> GetAddrInfo(const std::string& host, const std::stri
     return addresses;
 }
 
-TSocketAddress Resolve(const std::string& addressString) {
+TSocketAddress Resolve(const std::string& addressString, EIpVersionMode mode) {
     size_t protoDelimPos = addressString.find("://");
     if (protoDelimPos == std::string::npos) {
         throw TException() << "malformed resolve-string: '" << addressString << "'";
@@ -140,7 +150,19 @@ TSocketAddress Resolve(const std::string& addressString) {
     std::string host = addressString.substr(protoDelimPos + 3, hostDelimPos - (protoDelimPos + 3));
     std::string service = addressString.substr(hostDelimPos + 1);
 
-    TSocketAddress addr = GetAddrInfo(host, service, false, proto)[0];
+    TSocketAddress addr = GetAddrInfo(host, service, false, proto, mode)[0];
 
     return addr;
+}
+
+TSocketAddress ResolveV46(const std::string& addressString) {
+    return Resolve(addressString, V4_AND_V6);
+}
+
+TSocketAddress ResolveV4(const std::string& addressString) {
+    return Resolve(addressString, V4_ONLY);
+}
+
+TSocketAddress ResolveV6(const std::string& addressString) {
+    return Resolve(addressString, V6_ONLY);
 }

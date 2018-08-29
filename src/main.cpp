@@ -19,16 +19,16 @@ using namespace std::placeholders;
 int main(int argc, char** argv) {
     py::scoped_interpreter guard;
 
-    auto logger = spdlog::stdout_color_mt("main");
+    auto serviceLogger = spdlog::stdout_color_mt("service");
     auto reactorLogger = spdlog::stdout_color_mt("reactor");
 
 #ifdef _DEBUG_
-    logger->set_level(spdlog::level::debug);
+    serviceLogger->set_level(spdlog::level::debug);
     reactorLogger->set_level(spdlog::level::debug);
 #endif
 
     if (argc < 2) {
-        logger->critical("usage: portcullis CONFIG_FILE");
+        serviceLogger->critical("usage: portcullis CONFIG_FILE");
         return 1;
     }
 
@@ -37,13 +37,13 @@ int main(int argc, char** argv) {
     ::sigaddset(&sigs, SIGPIPE);
     ::sigprocmask(SIG_BLOCK, &sigs, NULL);
 
-    logger->info("running Portcullis (v{}, git@{}, {})", PORTCULLIS_VERSION, PORTCULLIS_GIT_COMMIT, PORTCULLIS_BUILD_TYPE);
+    serviceLogger->info("running Portcullis (v{}, git@{}, {})", PORTCULLIS_VERSION, PORTCULLIS_GIT_COMMIT, PORTCULLIS_BUILD_TYPE);
 
     TReactor reactor(reactorLogger);
 
     std::string configPath = argv[1];
 
-    TService service(configPath);
+    TService service(serviceLogger, configPath);
 
     reactor.StartCoroutine([&service]() {
         service.Start();

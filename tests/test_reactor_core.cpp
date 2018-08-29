@@ -189,6 +189,26 @@ TEST(ReactorCoreTest, MultipleSignalHandlerCalled) {
     EXPECT_TRUE(called == 2);
 }
 
+TEST(ReactorCoreTest, MultipleCancel) {
+    TReactor reactor(spdlog::get("reactor"));
+
+    TCoroutine* a = reactor.StartAwaitableCoroutine([]() {
+        while (!Reactor()->Current()->Canceled) {
+            Reactor()->Yield();
+        }
+    });
+
+    reactor.StartCoroutine([a]() {
+        for (int i = 0; i < 10; i++) {
+            a->Cancel();
+            Reactor()->Yield();
+        }
+        a->Await();
+    });
+
+    reactor.Run();
+}
+
 int main(int argc, char* argv[]) {
     auto logger = spdlog::stdout_color_mt("reactor");
     logger->set_level(spdlog::level::debug);

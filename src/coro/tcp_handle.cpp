@@ -1,8 +1,8 @@
 #include "reactor.h"
 #include "tcp_handle.h"
 
-TTcpHandlePtr TTcpHandle::Create() {
-    int fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+TTcpHandlePtr TTcpHandle::Create(bool ipv6) {
+    int fd = ::socket(ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (fd == -1) {
         ThrowErrno("tcp socket creation failed");
     }
@@ -45,7 +45,8 @@ void TTcpHandle::ShutdownWrite() {
 
 void TTcpHandle::Bind(const TSocketAddress& addr) {
     ASSERT(Active());
-    int res = ::bind(Fd(), addr.AddressAs<const sockaddr*>(), addr.Length());
+    const sockaddr* a = addr.AddressAs<const sockaddr*>();
+    int res = ::bind(Fd(), a, addr.Length());
     if (res == -1) {
         ThrowErrno("bind failed");
     }
@@ -60,20 +61,22 @@ void TTcpHandle::Listen(int backlog) {
     }
 }
 
-void TTcpHandle::ReuseAddr() {
-    ASSERT(Active());
+void TTcpHandle::EnableSockOpt(int level, int optname) {
     int enable = 1;
-    int res = setsockopt(Fd(), SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
+    int res = setsockopt(Fd(), level, optname, &enable, sizeof(int));
     if (res == -1) {
         ThrowErrno("setsockopt failed");
     }
 }
 
+void TTcpHandle::ReuseAddr() {
+    EnableSockOpt(SOL_SOCKET, SO_REUSEADDR);
+}
+
 void TTcpHandle::ReusePort() {
-    ASSERT(Active());
-    int enable = 1;
-    int res = setsockopt(Fd(), SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(int));
-    if (res == -1) {
-        ThrowErrno("setsockopt failed");
-    }
+    EnableSockOpt(SOL_SOCKET, SO_REUSEPORT);
+}
+
+void TTcpHandle::Ipv6Only() {
+    EnableSockOpt(IPPROTO_IPV6, IPV6_V6ONLY);
 }

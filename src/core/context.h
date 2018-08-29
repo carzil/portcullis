@@ -20,6 +20,8 @@ struct TConfig {
     size_t Backlog = 0;
 
     std::string Protocol;
+    bool AllowIpv6 = false;
+    bool Ipv6Only = false;
 
     std::string BackendHost;
     std::string BackendPort;
@@ -33,7 +35,6 @@ public:
     py::object HandlerModule;
     TSocketAddress BackendAddr;
 
-    TSocketAddress Resolve(const std::string& addr);
     ~TContext() {
         Logger->info("context destroyed");
     }

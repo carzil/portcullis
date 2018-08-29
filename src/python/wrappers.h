@@ -15,11 +15,11 @@ public:
     {
     }
 
-    static TTcpHandleWrapper Create(TContextPtr context) {
-        return TTcpHandleWrapper(context, TTcpHandle::Create());
+    static TTcpHandleWrapper Create(TContextPtr context, bool ipv6 = false) {
+        return TTcpHandleWrapper(context, TTcpHandle::Create(ipv6));
     }
 
-    void Connect(TSocketAddress addr);
+    static TTcpHandleWrapper Connect(TContextPtr context, TSocketAddress addr);
 
     py::bytes Read(ssize_t size);
     py::bytes ReadExactly(ssize_t size);

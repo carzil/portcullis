@@ -26,5 +26,7 @@ TConfig ReadConfigFromFile(std::string filename) {
     config.BackendHost = ReadFromConfig<std::string>(pyConfig, "backend_host");
     config.BackendPort = ReadFromConfig<std::string>(pyConfig, "backend_port");
     config.Protocol = ReadFromConfig<std::string>(pyConfig, "protocol");
+    config.AllowIpv6 = ReadFromConfig<bool>(pyConfig, "allow_ipv6");
+    config.Ipv6Only = ReadFromConfig<bool>(pyConfig, "ipv6_only");
     return config;
 }
