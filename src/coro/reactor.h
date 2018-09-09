@@ -7,6 +7,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include <sys/uio.h>
+
 #include <coro/context.h>
 #include <coro/coro.h>
 #include <util/system.h>
@@ -38,11 +40,10 @@ public:
         TCoroutine() = default;
         TCoroutine(TCoroutine&&) = default;
 
-        TCoroutine(TReactor* reactor, TCoroEntry entry)
+        TCoroutine(TReactor* reactor, TCoroEntry entry, size_t stackSize)
             : Reactor(reactor)
             , Entry(std::move(entry))
-            /* TODO: pass stack size in arguments */
-            , Stack(4096 * 100)
+            , Stack(stackSize)
         {
         }
 
@@ -61,13 +62,64 @@ public:
         TCoroStack Stack;
         TSavedContext Context;
 
-        /* TODO: flags */
-        bool Started = false;
-        bool Wakedup = false;
-        bool Canceled = false;
-        bool DeadlineReached = false;
-        bool Finished = false;
-        bool Awaitable = false;
+        enum {
+            StStarted = 1 << 0,
+            StWakedup = 1 << 1,
+            StCanceled = 1 << 2,
+            StDeadlineReached = 1 << 3,
+            StFinished = 1 << 4,
+            StAwaitable = 1 << 5
+        };
+
+        uint32_t Flags = 0;
+
+        bool Started() const {
+            return Flags & StStarted;
+        }
+
+        bool Finished() const {
+            return Flags & StFinished;
+        }
+
+        bool Wakedup() const {
+            return Flags & StWakedup;
+        }
+
+        bool Canceled() const {
+            return Flags & StCanceled;
+        }
+
+        bool DeadlineReached() const {
+            return Flags & StDeadlineReached;
+        }
+
+        bool Awaitable() const {
+            return Flags & StAwaitable;
+        }
+
+        void Started(bool val) {
+            SetFlag(StStarted, val);
+        }
+
+        void Finished(bool val) {
+            SetFlag(StFinished, val);
+        }
+
+        void Wakedup(bool val) {
+            SetFlag(StWakedup, val);
+        }
+
+        void Canceled(bool val) {
+            SetFlag(StCanceled, val);
+        }
+
+        void DeadlineReached(bool val) {
+            SetFlag(StDeadlineReached, val);
+        }
+
+        void Awaitable(bool val) {
+            SetFlag(StAwaitable, val);
+        }
 
         TCoroutine* Awaiter = nullptr;
 
@@ -78,6 +130,15 @@ public:
         /* holding an iterator in ActiveCoroutines_ or ZombieCoroutines lists
          * for fast removal */
         std::list<std::unique_ptr<TCoroutine>>::iterator ListIter;
+
+    private:
+        void SetFlag(int flag, bool set) {
+            if (set) {
+                Flags |= flag;
+            } else {
+                Flags &= ~flag;
+            }
+        }
     };
 
     class TDeadlineQueue {
@@ -137,7 +198,7 @@ public:
         std::vector<TCoroutine*> Queue_;
     };
 
-    TReactor(std::shared_ptr<spdlog::logger> logger);
+    TReactor(std::shared_ptr<spdlog::logger> logger, size_t stackSize);
 
     /*
      * Start a new coroutine. On exit, coroutine will be destroyed.
@@ -230,6 +291,8 @@ public:
      */
     TResult<size_t> Write(int fd, const void* from, size_t size, TDeadline deadline = TDeadline::max());
 
+    TResult<size_t> Writev(int fd, const iovec* iov, int iovcnt, TDeadline deadline = TDeadline::max());
+
     /*
      * Accepts new connection on given `fd`.
      * @param addr -- address of new connection on success.
@@ -256,6 +319,11 @@ public:
      * Transfer execution to next scheduled coroutine.
      */
     void Yield();
+
+    void SetCoroutineStackSize(size_t size) {
+        CoroutineStackSize_ = size;
+        Logger_->info("coroutine stack size is {} bytes ({} KBytes)", size, size / 1024);
+    }
 
 private:
     struct TWaitState {
@@ -303,6 +371,8 @@ private:
     TDeadlineQueue DeadlineQueue_;
 
     std::shared_ptr<spdlog::logger> Logger_;
+
+    size_t CoroutineStackSize_ = 0;
 };
 
 using TCoroutine = TReactor::TCoroutine;

@@ -2,17 +2,23 @@
 
 #include <memory>
 #include <vector>
+#include <list>
 
 #include "util/generic.h"
 
 class TMemoryRegion {
 public:
     TMemoryRegion() = default;
+
     TMemoryRegion(void* data, size_t size)
         : Data_(data)
         , Size_(size)
-    {
-    }
+    {}
+
+    TMemoryRegion(std::string& s)
+        : Data_(s.data())
+        , Size_(s.size())
+    {}
 
     const void* Data() const {
         return Data_;
@@ -35,6 +41,16 @@ public:
         return Size_ == 0;
     }
 
+    void CopyTo(TMemoryRegion other, size_t size) {
+        ASSERT(other.Size() >= size);
+        ASSERT(size <= Size());
+        memcpy(other.Data(), Data(), size);
+    }
+
+    void CopyTo(TMemoryRegion other) {
+        CopyTo(other, Size());
+    }
+
     TMemoryRegion Slice(size_t offset) const {
         return TMemoryRegion(reinterpret_cast<char*>(Data_) + offset, Size_ - offset);
     }
@@ -52,29 +68,43 @@ public:
     {
     }
 
+    void Add(TMemoryRegion region) {
+        Chain_.push_back(region);
+    }
+
     void Advance(size_t bytes) {
-        PosInCurrRegion_ += bytes;
-        if (PosInCurrRegion_ == Chain_[CurrRegion_].Size()) {
-            CurrRegion_++;
-            PosInCurrRegion_ = 0;
+        while (!Chain_.empty() && bytes >= Chain_.begin()->Size()) {
+            bytes -= Chain_.begin()->Size();
+            Chain_.erase(Chain_.begin());
+        }
+
+        if (!Chain_.empty()) {
+            *Chain_.begin() = Chain_.begin()->Slice(bytes);
         }
     }
 
-    TMemoryRegion CurrentMemoryRegion() {
-        if (CurrRegion_ >= Chain_.size()) {
-            return TMemoryRegion();
-        }
-        return Chain_[CurrRegion_].Slice(PosInCurrRegion_);
+    const std::list<TMemoryRegion>& Regions() const {
+        return Chain_;
+    }
+
+    std::list<TMemoryRegion>& Regions() {
+        return Chain_;
+    }
+
+    bool Empty() const {
+        return Chain_.empty();
     }
 
 private:
-    size_t CurrRegion_ = 0;
-    size_t PosInCurrRegion_ = 0;
-    std::vector<TMemoryRegion> Chain_;
+    std::list<TMemoryRegion> Chain_;
 };
 
 class TSocketBuffer : public TMoveOnly {
 public:
+    enum {
+        DefaultSize = 16384
+    };
+
     TSocketBuffer() = default;
 
     TSocketBuffer(size_t capacity)
@@ -100,14 +130,22 @@ public:
     }
 
     void Advance(size_t n) {
+        ASSERT(n <= Remaining());
         Size_ += n;
+    }
+
+    void ChopBegin(size_t n) {
+        ASSERT(n > 0);
+        ASSERT(n <= Size());
+        ::memmove(Data(), DataAs<const uint8_t*>() + n, Size() - n);
+        Size_ -= n;
     }
 
     inline void Append(const void* data, size_t sz) {
         if (sz > Remaining()) {
             throw TException() << "buffer is full";
         }
-        memcpy(End(), data, sz);
+        ::memcpy(End(), data, sz);
         Advance(sz);
     }
 

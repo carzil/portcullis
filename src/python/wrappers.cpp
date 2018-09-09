@@ -3,7 +3,11 @@
 
 py::bytes TTcpHandleWrapper::Read(ssize_t size) {
     TSocketBuffer buffer(size);
-    TResult<size_t> res = Handle_->Read(buffer);
+    TResult<size_t> res;
+    {
+        TPyContextSwitchGuard guard(Context_);
+        res = Handle_->Read(buffer);
+    }
     if (!res) {
         ThrowErr(res.Error(), "read failed");
     }
@@ -14,7 +18,11 @@ py::bytes TTcpHandleWrapper::ReadExactly(ssize_t size) {
     TSocketBuffer buffer(size);
 
     while (buffer.Remaining() > 0) {
-        TResult<size_t> res = Handle_->Read(buffer);
+        TResult<size_t> res;
+        {
+            TPyContextSwitchGuard guard(Context_);
+            res = Handle_->Read(buffer);
+        }
         if (!res) {
             ThrowErr(res.Error(), "read_exactly failed");
         } else if (res.Result() == 0) {
@@ -28,7 +36,11 @@ py::bytes TTcpHandleWrapper::ReadExactly(ssize_t size) {
 size_t TTcpHandleWrapper::Write(std::string_view buf) {
     TMemoryRegion region(const_cast<char*>(buf.data()), buf.size());
 
-    TResult<size_t> res = Handle_->Write(region);
+TResult<size_t> res;
+{
+        TPyContextSwitchGuard guard(Context_);
+        res = Handle_->Write(region);
+    }
     if (!res) {
         ThrowErr(res.Error(), "write failed");
     }
@@ -39,7 +51,11 @@ void TTcpHandleWrapper::WriteAll(std::string_view buf) {
     TMemoryRegion region(const_cast<char*>(buf.data()), buf.size());
 
     while (!region.Empty()) {
-        TResult<size_t> res = Handle_->Write(region);
+        TResult<size_t> res;
+        {
+            TPyContextSwitchGuard guard(Context_);
+            res = Handle_->Write(region);
+        }
         if (!res) {
             ThrowErr(res.Error(), "write failed");
         }
@@ -48,9 +64,13 @@ void TTcpHandleWrapper::WriteAll(std::string_view buf) {
     }
 }
 
-TTcpHandleWrapper TTcpHandleWrapper::Connect(TContextPtr context, TSocketAddress addr) {
+TTcpHandleWrapper TTcpHandleWrapper::Connect(TContextWrapper context, TSocketAddress addr) {
     TTcpHandlePtr handle = TTcpHandle::Create(addr.Ipv6());
-    TResult<bool> res = handle->Connect(addr);
+    TResult<bool> res;
+    {
+        TPyContextSwitchGuard guard(context);
+        res = handle->Connect(addr);
+    }
     if (!res) {
         ThrowErr(res.Error(), "connect failed");
     }
@@ -59,11 +79,15 @@ TTcpHandleWrapper TTcpHandleWrapper::Connect(TContextPtr context, TSocketAddress
 
 size_t TTcpHandleWrapper::Transfer(TTcpHandleWrapper other, size_t size) {
     /* TODO: allocate in pool */
-    TSocketBuffer buffer(4096);
+    TSocketBuffer buffer(TSocketBuffer::DefaultSize);
 
     size_t transfered = 0;
     while (transfered < size) {
-        TResult<size_t> res = Handle_->Transfer(*other.Handle_, buffer, std::min(buffer.Remaining(), size));
+        TResult<size_t> res;
+        {
+            TPyContextSwitchGuard guard(Context_);
+            res = Handle_->TransferAll(*other.Handle_, buffer, std::min(buffer.Remaining(), size));
+        }
         if (!res) {
             ThrowErr(res.Error(), "transfer failed");
         }
@@ -80,11 +104,15 @@ size_t TTcpHandleWrapper::Transfer(TTcpHandleWrapper other, size_t size) {
 
 size_t TTcpHandleWrapper::TransferAll(TTcpHandleWrapper other) {
     /* TODO: allocate in pool */
-    TSocketBuffer buffer(4096);
+    TSocketBuffer buffer(TSocketBuffer::DefaultSize);
 
     size_t transfered = 0;
     while (true) {
-        TResult<size_t> res = Handle_->Transfer(*other.Handle_, buffer, buffer.Remaining());
+        TResult<size_t> res;
+        {
+            TPyContextSwitchGuard guard(Context_);
+            res = Handle_->TransferAll(*other.Handle_, buffer, buffer.Remaining());
+        }
         if (!res) {
             ThrowErr(res.Error(), "transfer failed");
         }

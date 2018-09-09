@@ -8,7 +8,7 @@
 #include <core/service.h>
 #include <coro/coro.h>
 #include <coro/reactor.h>
-#include <coro/tcp_handle.h>
+#include <handles/tcp.h>
 
 #include <signal.h>
 #include <unistd.h>
@@ -39,7 +39,7 @@ int main(int argc, char** argv) {
 
     serviceLogger->info("running Portcullis (v{}, git@{}, {})", PORTCULLIS_VERSION, PORTCULLIS_GIT_COMMIT, PORTCULLIS_BUILD_TYPE);
 
-    TReactor reactor(reactorLogger);
+    TReactor reactor(reactorLogger, 4096 * 16);
 
     std::string configPath = argv[1];
 

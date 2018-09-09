@@ -1,5 +1,5 @@
-#include "reactor.h"
-#include "tcp_handle.h"
+#include "tcp.h"
+#include <coro/reactor.h>
 
 TTcpHandlePtr TTcpHandle::Create(bool ipv6) {
     int fd = ::socket(ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM, IPPROTO_TCP);

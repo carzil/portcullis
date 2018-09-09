@@ -27,7 +27,7 @@ find_package(PythonLibs REQUIRED)
 include_directories(
     ${CMAKE_CURRENT_BINARY_DIR}/src
     src/
-    contrib/picohttpparser/
+    contrib/
 )
 
 execute_process(
@@ -68,9 +68,11 @@ set(CORE_SOURCES
 
     src/coro/context.S
     src/coro/coro.cpp
-    src/coro/handle.cpp
-    src/coro/tcp_handle.cpp
     src/coro/reactor.cpp
+
+    src/handles/common.cpp
+    src/handles/tcp.cpp
+    src/handles/http.cpp
 
     src/python/wrappers.cpp
 
@@ -87,7 +89,7 @@ target_link_libraries(portcullis-core PRIVATE ${PYTHON_LIBRARIES} pybind11::embe
 
 set_source_files_properties(${GENERATED_RESOURCES} PROPERTIES GENERATED TRUE)
 add_executable(portcullis ${EXECUTABLE_SOURCES} ${GENERATED_RESOURCES})
-target_link_libraries(portcullis PRIVATE portcullis-core ${PYTHON_LIBRARIES} pybind11::embed spdlog)
+target_link_libraries(portcullis PRIVATE portcullis-core ${PYTHON_LIBRARIES} pybind11::embed spdlog dl util)
 
 if (PORTCULLIS_TESTING)
     add_subdirectory(tests)

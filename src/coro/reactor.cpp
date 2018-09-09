@@ -27,9 +27,11 @@ void TReactor::CoroWrapper() {
     coro->Reactor->Finish(coro);
 }
 
-TReactor::TReactor(std::shared_ptr<spdlog::logger> logger)
+TReactor::TReactor(std::shared_ptr<spdlog::logger> logger, size_t stackSize)
     : Logger_(std::move(logger))
 {
+    SetCoroutineStackSize(stackSize);
+
     EpollFd_ = epoll_create1(EPOLL_CLOEXEC);
     if (EpollFd_ == -1) {
         ThrowErrno("epoll_create failed");
@@ -47,12 +49,12 @@ TCoroutine* TReactor::Current() const {
 }
 
 TCoroutine* TReactor::StartCoroutine(TCoroEntry entry, bool awaitable) {
-    std::unique_ptr<TCoroutine> coro = std::make_unique<TCoroutine>(this, std::move(entry));
+    std::unique_ptr<TCoroutine> coro = std::make_unique<TCoroutine>(this, std::move(entry), CoroutineStackSize_);
     TCoroutine* coroPtr = coro.get();
     ScheduledNextCoroutines_.push_back(coroPtr);
     ActiveCoroutines_.push_back(std::move(coro));
     coroPtr->ListIter = std::next(ActiveCoroutines_.end(), -1);
-    coroPtr->Awaitable = awaitable;
+    coroPtr->Awaitable(awaitable);
     SPDLOG_DEBUG(Logger_, "started coroutine {}", reinterpret_cast<void*>(coroPtr));
     return coroPtr;
 }
@@ -62,7 +64,7 @@ void TReactor::Finish(TCoroutine* coro) {
     ASSERT(!FinishedCoroutine_);
     ASSERT(coro->PosInDeadlineQueue == -1);
 
-    if (coro->Awaitable) {
+    if (coro->Awaitable()) {
         std::unique_ptr<TCoroutine>& zombie = ZombieCoroutines_.emplace_back(std::move(*coro->ListIter));
         ASSERT(zombie.get() == coro);
         ActiveCoroutines_.erase(coro->ListIter);
@@ -77,7 +79,7 @@ void TReactor::Finish(TCoroutine* coro) {
         ActiveCoroutines_.erase(coro->ListIter);
     }
 
-    coro->Finished = true;
+    coro->Finished(true);
     SPDLOG_DEBUG(Logger_, "{} finished", reinterpret_cast<void*>(coro));
 
     if (ActiveCoroutines_.empty()) {
@@ -95,7 +97,7 @@ void TReactor::Finish(TCoroutine* coro) {
 }
 
 void TReactor::Yield() {
-    ASSERT(!CurrentCoro->Finished);
+    ASSERT(!CurrentCoro->Finished());
     SPDLOG_DEBUG(Logger_, "{} yielded", reinterpret_cast<void*>(CurrentCoro));
     Wakeup(CurrentCoro);
     SwitchCoroutine(false);
@@ -130,10 +132,10 @@ void TReactor::SwitchCoroutine(bool exitOld) {
     TCoroutine* ready = ScheduledCoroutines_.front();
     ScheduledCoroutines_.pop_front();
 
-    ready->Wakedup = false;
+    ready->Wakedup(false);
 
-    if (!ready->Started) {
-        ready->Started = true;
+    if (!ready->Started()) {
+        ready->Started(true);
         ready->Stack.Push(0); /* stack address must be aligned before call */
         ready->Context.SetStackPointer(ready->Stack.Pointer());
         ready->Context.SetInstructionPointer(reinterpret_cast<void*>(&TReactor::CoroWrapper));
@@ -155,11 +157,11 @@ void TReactor::SwitchCoroutine(bool exitOld) {
 
 void TReactor::Wakeup(TCoroutine* coro) {
     ASSERT(coro->Reactor == this);
-    ASSERT(!coro->Finished);
+    ASSERT(!coro->Finished());
 
-    if (!coro->Wakedup) {
+    if (!coro->Wakedup()) {
         ScheduledNextCoroutines_.push_back(coro);
-        coro->Wakedup = true;
+        coro->Wakedup(true);
     }
 }
 
@@ -178,7 +180,7 @@ void TReactor::UpdateWaitState(int fd, uint32_t events, TCoroutine* value) {
 TResult<int> TReactor::WaitFor(int fd, uint32_t waitEvents, TDeadline deadline) {
     ASSERT(fd < static_cast<int>(WaitState_.size()));
 
-    if (CurrentCoro->Canceled) {
+    if (CurrentCoro->Canceled()) {
         SPDLOG_DEBUG(Logger_, "{} canceled immediately", reinterpret_cast<void*>(CurrentCoro));
         return TResult<int>::MakeCanceled();
     }
@@ -196,20 +198,20 @@ TResult<int> TReactor::WaitFor(int fd, uint32_t waitEvents, TDeadline deadline) 
     SPDLOG_DEBUG(Logger_, "{} starts WaitFor(fd={}, waitEvents={})", reinterpret_cast<void*>(CurrentCoro), fd, waitEvents);
 
     if (deadline != TDeadline::max()) {
-        CurrentCoro->DeadlineReached = false;
+        CurrentCoro->DeadlineReached(false);
         CurrentCoro->Deadline = deadline;
         DeadlineQueue_.Push(CurrentCoro);
     }
 
     SwitchCoroutine(false);
 
-    if (CurrentCoro->DeadlineReached) {
+    if (CurrentCoro->DeadlineReached()) {
         SPDLOG_DEBUG(Logger_, "{} deadline reached while WaitFor(fd={}, waitEvents={})", reinterpret_cast<void*>(CurrentCoro), fd, waitEvents);
         UpdateWaitState(fd, waitEvents, nullptr);
         return TResult<int>::MakeTimedOut();
     }
 
-    if (CurrentCoro->Canceled) {
+    if (CurrentCoro->Canceled()) {
         SPDLOG_DEBUG(Logger_, "{} canceled in WaitFor", reinterpret_cast<void*>(CurrentCoro));
         UpdateWaitState(fd, waitEvents, nullptr);
         return TResult<int>::MakeCanceled();
@@ -281,10 +283,30 @@ TResult<size_t> TReactor::Write(int fd, const void* from, size_t sz, TDeadline d
                 WaitState_[fd].ReadyEvents &= ~TReactor::EvWrite;
                 continue;
             }
-            SPDLOG_DEBUG(Logger_, "{} performed Read({}, {}, {}) = {}", reinterpret_cast<void*>(CurrentCoro), fd, from, sz, -errno);
+            SPDLOG_DEBUG(Logger_, "{} performed Write({}, {}, {}) = {}", reinterpret_cast<void*>(CurrentCoro), fd, from, sz, -errno);
             return TResult<size_t>::MakeFail(errno);
         } else {
             SPDLOG_DEBUG(Logger_, "{} performed Write({}, {}, {}) = {}", reinterpret_cast<void*>(CurrentCoro), fd, from, sz, res);
+            return TResult<size_t>::MakeSuccess(res);
+        }
+    }
+}
+
+TResult<size_t> TReactor::Writev(int fd, const iovec* iov, int iovcnt, TDeadline deadline) {
+    ASSERT(iovcnt > 0);
+    while (true) {
+        TResult<int> eventsMask = Reactor()->WaitFor(fd, TReactor::EvWrite, deadline);
+        if (!eventsMask) {
+            return TResult<size_t>::ForwardError(eventsMask);
+        }
+        ssize_t res = ::writev(fd, iov, iovcnt);
+        if (res == -1) {
+            if (errno == EAGAIN) {
+                WaitState_[fd].ReadyEvents &= ~TReactor::EvWrite;
+                continue;
+            }
+            return TResult<size_t>::MakeFail(errno);
+        } else {
             return TResult<size_t>::MakeSuccess(res);
         }
     }
@@ -428,7 +450,7 @@ void TReactor::DoPoll() {
 
     while (!DeadlineQueue_.Empty() && DeadlineQueue_.Top()->Deadline <= std::chrono::steady_clock::now()) {
         TCoroutine* coro = DeadlineQueue_.Peek();
-        coro->DeadlineReached = true;
+        coro->DeadlineReached(true);
         Wakeup(coro);
     }
 }
@@ -461,14 +483,14 @@ void TReactor::CloseFd(int fd) {
 void TReactor::Cancel(TCoroutine* coro) {
     SPDLOG_DEBUG(Logger_, "cancel {}", reinterpret_cast<void*>(coro));
 
-    if (coro->Finished) {
+    if (coro->Finished()) {
         return;
     }
 
     if (coro->PosInDeadlineQueue != TDeadlineQueue::InvalidPos) {
         DeadlineQueue_.Remove(coro);
     }
-    coro->Canceled = true;
+    coro->Canceled(true);
     Wakeup(coro);
 }
 
@@ -482,10 +504,10 @@ TResult<bool> TReactor::AwaitAll(std::vector<TCoroutine*> coros) {
     for (TCoroutine* coro : coros) {
         ASSERT(coro != CurrentCoro);
         ASSERT(!coro->Awaiter);
-        ASSERT(coro->Awaitable);
+        ASSERT(coro->Awaitable());
     }
 
-    if (CurrentCoro->Canceled) {
+    if (CurrentCoro->Canceled()) {
         for (TCoroutine* coro : coros) {
             coro->Awaiter = nullptr;
             coro->Cancel();
@@ -500,10 +522,10 @@ TResult<bool> TReactor::AwaitAll(std::vector<TCoroutine*> coros) {
     SPDLOG_DEBUG(Logger_, "{} begins AwaitAll", reinterpret_cast<void*>(CurrentCoro));
 
     bool allFinished = false;
-    while (!CurrentCoro->Canceled) {
+    while (!CurrentCoro->Canceled()) {
         allFinished = true;
         for (TCoroutine* coro : coros) {
-            if (!coro->Finished) {
+            if (!coro->Finished()) {
                 allFinished = false;
                 break;
             }
@@ -516,7 +538,7 @@ TResult<bool> TReactor::AwaitAll(std::vector<TCoroutine*> coros) {
         SwitchCoroutine(false);
     }
 
-    if (CurrentCoro->Canceled) {
+    if (CurrentCoro->Canceled()) {
         for (TCoroutine* coro : coros) {
             /* prevent use-after-free */
             coro->Awaiter = nullptr;

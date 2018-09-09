@@ -7,7 +7,7 @@
 #include <unordered_map>
 
 #include "fwd.h"
-#include <coro/tcp_handle.h>
+#include <handles/tcp.h>
 
 namespace py = pybind11;
 
@@ -25,6 +25,8 @@ struct TConfig {
 
     std::string BackendHost;
     std::string BackendPort;
+
+    size_t CoroutineStackSize = 0;
 };
 
 class TContext {

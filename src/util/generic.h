@@ -107,3 +107,6 @@ inline std::string ErrorDescription(int err) {
     throw (TException() << expr) << ": " << strerror_r(err, error, sizeof(error));
 
 #define ThrowErrno(expr) ThrowErr(errno, expr)
+
+#define LIKELY(x)   __builtin_expect(!!(x), 1)
+#define UNLIKELY(x) __builtin_expect(!!(x), 0)
