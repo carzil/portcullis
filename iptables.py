@@ -1,16 +1,15 @@
 #!/usr/bin/python3
 
-import json
 import os
 import subprocess
 import sys
 
 
-def modify_rule(is_ipv6, is_del, portcullis_host, portcullis_port, port, name):
+def modify_rule(is_ipv6, is_del, protocol, backend_host, backend_port, port, name):
     prog = '/sbin/ip6tables' if is_ipv6 else '/sbin/iptables'
     action_flag = '-D' if is_del else '-A'
-    cmd = [prog, '-t', 'nat', action_flag, 'PREROUTING', '-p', 'tcp',
-        '--dport', str(port), '-j', 'DNAT', '--to-destination', '{portcullis_host}:{portcullis_port}'
+    cmd = [prog, '-t', 'nat', action_flag, 'PREROUTING', '-p', protocol,
+        '--dport', str(port), '-j', 'DNAT', '--to-destination', '{backend_host}:{backend_port}'
         '-m', 'comment', '--comment', 'Portcullis port forward for service {name}'
     ]
 
@@ -35,13 +34,23 @@ def main():
         raise RuntimeError('You must be root to change IPTables')
 
     config_file = sys.argv[2]
-    config = json.load(open(config_file))
+    config_str = open(config_file).read()
+    config = {}
+    exec(config_str, config)
 
-    for val in config['ports']:
-        modify_rule(False, action == 'del', config['portcullis_host'], val['portcullis_port'], val['port'], config['name'])
+    backend_port = config['backend_port']
+    name = config['name']
+    port = config['port']
+    protocol = config['protocol']
 
-    for val in config['ipv6ports']:
-        modify_rule(False, action == 'del', config['portcullis_ipv6host'], val['portcullis_port'], val['port'], config['name'])
+    if protocol not in ('tcp', 'udp'):
+        raise ValueError('Unknown protocol')  
+
+    if 'backend_host' in config:
+        modify_rule(False, action == 'del', protocol, config['backend_host'], backend_port, port, name)
+
+    if 'backend_ipv6host' in config:
+        modify_rule(True, action == 'del', protocol, config['backend_ipv6host'], backend_port, port, name)
 
 
 if __name__ == '__main__':
