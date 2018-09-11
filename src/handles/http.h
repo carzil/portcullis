@@ -42,7 +42,7 @@ class THttpHandle {
 public:
     THttpHandle(TTcpHandlePtr handle, size_t bufferSize = TSocketBuffer::DefaultSize)
         : Handle_(std::move(handle))
-        , Buffer_(bufferSize)
+        , Reader_(Handle_, bufferSize)
     {}
 
     TResult<THttpRequest> ReadRequest(TReactor::TDeadline deadline = TReactor::TDeadline::max());
@@ -54,13 +54,15 @@ public:
     TResult<size_t> TransferAll(THttpHandle& other, size_t size, TReactor::TDeadline deadline = TReactor::TDeadline::max());
     TResult<size_t> TransferBody(THttpHandle& other, const THttpMessage& message, TReactor::TDeadline deadline = TReactor::TDeadline::max());
 
+    TResult<TMemoryRegion> ReadBody(const THttpMessage& message, TReactor::TDeadline deadline = TReactor::TDeadline::max());
+
     void Close() {
         Handle_->Close();
     }
 
 private:
     TTcpHandlePtr Handle_;
-    TSocketBuffer Buffer_;
+    TBufferedReader<TTcpHandlePtr> Reader_;
 };
 
 using THttpHandlePtr = std::shared_ptr<THttpHandle>;

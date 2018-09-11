@@ -46,8 +46,8 @@ public:
     TTcpHandleWrapper(TContextWrapper context, TTcpHandlePtr handle)
         : Handle_(handle)
         , Context_(context)
-    {
-    }
+        , Reader_(std::make_shared<TBufferedReader<TTcpHandlePtr>>(Handle_, TSocketBuffer::DefaultSize))
+    {}
 
     static TTcpHandleWrapper Create(TContextWrapper context, bool ipv6 = false) {
         return TTcpHandleWrapper(context, TTcpHandle::Create(ipv6));
@@ -57,11 +57,11 @@ public:
 
     py::bytes Read(ssize_t size);
     py::bytes ReadExactly(ssize_t size);
+
     size_t Write(std::string_view buf);
     void WriteAll(std::string_view buf);
 
-    size_t Transfer(TTcpHandleWrapper other, size_t size);
-    size_t TransferAll(TTcpHandleWrapper other);
+    size_t TransferExactly(TTcpHandleWrapper other, size_t size);
 
 
     void Close() {
@@ -78,6 +78,7 @@ public:
 
 private:
     TTcpHandlePtr Handle_;
+    std::shared_ptr<TBufferedReader<TTcpHandlePtr>> Reader_;
     TContextWrapper Context_;
 };
 

@@ -44,15 +44,24 @@ public:
     void CopyTo(TMemoryRegion other, size_t size) {
         ASSERT(other.Size() >= size);
         ASSERT(size <= Size());
-        memcpy(other.Data(), Data(), size);
+        ::memcpy(other.Data(), Data(), size);
     }
 
     void CopyTo(TMemoryRegion other) {
         CopyTo(other, Size());
     }
 
+    bool EqualTo(TMemoryRegion other) const {
+        return ::memcmp(Data(), other.Data(), std::min(Size(), other.Size())) == 0;
+    }
+
+    TMemoryRegion FitSize(size_t size) const {
+        size_t resultSize = std::min(size, Size());
+        return TMemoryRegion(reinterpret_cast<char*>(Data_), resultSize);
+    }
+
     TMemoryRegion Slice(size_t offset) const {
-        return TMemoryRegion(reinterpret_cast<char*>(Data_) + offset, Size_ - offset);
+        return TMemoryRegion(reinterpret_cast<char*>(Data_) + offset, Size() - offset);
     }
 
 private:
@@ -113,8 +122,16 @@ public:
     {
     }
 
+    void FillWithZero() {
+        ::memset(Data(), '\0', Size());
+    }
+
     size_t Remaining() const {
         return Capacity_ - Size_;
+    }
+
+    size_t Capacity() const {
+        return Capacity_;
     }
 
     size_t Size() const {
@@ -137,8 +154,12 @@ public:
     void ChopBegin(size_t n) {
         ASSERT(n > 0);
         ASSERT(n <= Size());
-        ::memmove(Data(), DataAs<const uint8_t*>() + n, Size() - n);
-        Size_ -= n;
+        if (n == Size()) {
+            Reset();
+        } else {
+            ::memmove(Data(), DataAs<const uint8_t*>() + n, Size() - n);
+            Size_ -= n;
+        }
     }
 
     inline void Append(const void* data, size_t sz) {

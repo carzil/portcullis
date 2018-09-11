@@ -1,43 +1,43 @@
 #include "wrappers.h"
-
+#include <handles/buffered.h>
 
 py::bytes TTcpHandleWrapper::Read(ssize_t size) {
-    TSocketBuffer buffer(size);
-    TResult<size_t> res;
+    TResult<TMemoryRegion> res;
     {
         TPyContextSwitchGuard guard(Context_);
-        res = Handle_->Read(buffer);
+        res = Reader_->Read();
     }
+
     if (!res) {
         ThrowErr(res.Error(), "read failed");
     }
-    return py::bytes(buffer.DataAs<const char*>(), size);
+    const TMemoryRegion& region = res.Result();
+    py::bytes result(region.DataAs<const char*>(), region.Size());
+    Reader_->ChopBegin(region.Size());
+    return result;
 }
 
 py::bytes TTcpHandleWrapper::ReadExactly(ssize_t size) {
-    TSocketBuffer buffer(size);
-
-    while (buffer.Remaining() > 0) {
-        TResult<size_t> res;
-        {
-            TPyContextSwitchGuard guard(Context_);
-            res = Handle_->Read(buffer);
-        }
-        if (!res) {
-            ThrowErr(res.Error(), "read_exactly failed");
-        } else if (res.Result() == 0) {
-            throw TException() << "read_exactly failed: eof reached";
-        }
+    TResult<TMemoryRegion> res;
+    {
+        TPyContextSwitchGuard guard(Context_);
+        res = Reader_->ReadExactly(size);
     }
 
-    return py::bytes(buffer.DataAs<const char*>(), size);
+    if (!res) {
+        ThrowErr(res.Error(), "read_exactly failed");
+    }
+
+    py::bytes result(res.Result().DataAs<const char*>(), res.Result().Size());
+    Reader_->ChopBegin(res.Result().Size());
+    return result;
 }
 
 size_t TTcpHandleWrapper::Write(std::string_view buf) {
     TMemoryRegion region(const_cast<char*>(buf.data()), buf.size());
 
-TResult<size_t> res;
-{
+    TResult<size_t> res;
+    {
         TPyContextSwitchGuard guard(Context_);
         res = Handle_->Write(region);
     }
@@ -48,19 +48,13 @@ TResult<size_t> res;
 }
 
 void TTcpHandleWrapper::WriteAll(std::string_view buf) {
-    TMemoryRegion region(const_cast<char*>(buf.data()), buf.size());
-
-    while (!region.Empty()) {
-        TResult<size_t> res;
-        {
-            TPyContextSwitchGuard guard(Context_);
-            res = Handle_->Write(region);
-        }
-        if (!res) {
-            ThrowErr(res.Error(), "write failed");
-        }
-        region = region.Slice(res.Result());
-
+    TResult<size_t> res;
+    {
+        TPyContextSwitchGuard guard(Context_);
+        res = Handle_->WriteAll({ const_cast<char*>(buf.data()), buf.size() });
+    }
+    if (!res) {
+        ThrowErr(res.Error(), "write failed");
     }
 }
 
@@ -77,52 +71,16 @@ TTcpHandleWrapper TTcpHandleWrapper::Connect(TContextWrapper context, TSocketAdd
     return TTcpHandleWrapper(std::move(context), std::move(handle));
 }
 
-size_t TTcpHandleWrapper::Transfer(TTcpHandleWrapper other, size_t size) {
-    /* TODO: allocate in pool */
-    TSocketBuffer buffer(TSocketBuffer::DefaultSize);
-
-    size_t transfered = 0;
-    while (transfered < size) {
-        TResult<size_t> res;
-        {
-            TPyContextSwitchGuard guard(Context_);
-            res = Handle_->TransferAll(*other.Handle_, buffer, std::min(buffer.Remaining(), size));
-        }
-        if (!res) {
-            ThrowErr(res.Error(), "transfer failed");
-        }
-
-        if (res.Result() == 0) {
-            throw TException() << "transfer failed: eof reached";
-        }
-
-        transfered += res.Result();
+size_t TTcpHandleWrapper::TransferExactly(TTcpHandleWrapper other, size_t size) {
+    TResult<size_t> res;
+    {
+        TPyContextSwitchGuard guard(Context_);
+        res = Reader_->TransferExactly(*other.Handle_, size);
     }
 
-    return transfered;
-}
-
-size_t TTcpHandleWrapper::TransferAll(TTcpHandleWrapper other) {
-    /* TODO: allocate in pool */
-    TSocketBuffer buffer(TSocketBuffer::DefaultSize);
-
-    size_t transfered = 0;
-    while (true) {
-        TResult<size_t> res;
-        {
-            TPyContextSwitchGuard guard(Context_);
-            res = Handle_->TransferAll(*other.Handle_, buffer, buffer.Remaining());
-        }
-        if (!res) {
-            ThrowErr(res.Error(), "transfer failed");
-        }
-
-        if (res.Result() == 0) {
-            break;
-        }
-
-        transfered += res.Result();
+    if (!res) {
+        ThrowErr(res.Error(), "transfer_all failed");
     }
 
-    return transfered;
+    return size;
 }

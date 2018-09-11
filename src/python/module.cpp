@@ -36,8 +36,7 @@ void InitCoreModule(py::module& core) {
         .def("read_exactly", &TTcpHandleWrapper::ReadExactly)
         .def("write", &TTcpHandleWrapper::Write)
         .def("write_all", &TTcpHandleWrapper::WriteAll)
-        .def("transfer", &TTcpHandleWrapper::Transfer)
-        .def("transfer_all", &TTcpHandleWrapper::TransferAll)
+        .def("transfer_exactly", &TTcpHandleWrapper::TransferExactly)
         .def("close", &TTcpHandleWrapper::Close);
 
     py::class_<TContextWrapper>(core, "Context");

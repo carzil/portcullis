@@ -11,24 +11,10 @@ enum {
 static std::string CRLF = "\r\n";
 
 TResult<THttpRequest> THttpHandle::ReadRequest(TReactor::TDeadline deadline) {
-    while (true) {
-        if (Buffer_.Full()) {
-            // TODO: error codes
-            return TResult<THttpRequest>::MakeFail(-1);
-        }
+    TResult<THttpRequest> result;
+    size_t prevBufLen = 0;
 
-        size_t prevBufLen = Buffer_.Size();
-
-        TResult<size_t> res = Handle_->Read(Buffer_, deadline);
-
-        if (!res) {
-            return TResult<THttpRequest>::ForwardError(res);
-        }
-
-        if (res.Result() == 0) {
-            return TResult<THttpRequest>::MakeFail(-1);
-        }
-
+    TResult<size_t> res = Reader_.ReadUntil([this, &result, &prevBufLen](TMemoryRegion region) {
         const char* method = nullptr;
         const char* path = nullptr;
         size_t methodLen = 0;
@@ -37,8 +23,8 @@ TResult<THttpRequest> THttpHandle::ReadRequest(TReactor::TDeadline deadline) {
         int minorVersion = 0;
         struct phr_header headers[MAX_HEADERS] = {};
 
-        int ret = phr_parse_request(
-            Buffer_.DataAs<const char*>(), Buffer_.Size(),
+        int res = phr_parse_request(
+            region.DataAs<const char*>(), region.Size(),
             &method, &methodLen,
             &path, &pathLen,
             &minorVersion,
@@ -46,56 +32,50 @@ TResult<THttpRequest> THttpHandle::ReadRequest(TReactor::TDeadline deadline) {
             prevBufLen
         );
 
-        if (ret > 0) {
-            THttpRequest result;
-            result.Method = std::string(method, methodLen);
-            result.Url = std::string(path, pathLen);
-            result.MinorVersion = minorVersion;
-            result.Headers.reserve(numHeaders);
+        prevBufLen = region.Size();
+
+        if (res > 0) {
+            THttpRequest request;
+            request.Method = std::string(method, methodLen);
+            request.Url = std::string(path, pathLen);
+            request.MinorVersion = minorVersion;
+            request.Headers.reserve(numHeaders);
             for (size_t i = 0; i < numHeaders; i++) {
-                result.Headers.emplace(
+                request.Headers.emplace(
                     std::string(headers[i].name, headers[i].name_len),
                     std::string(headers[i].value, headers[i].value_len)
                 );
             }
-            Buffer_.ChopBegin(ret);
-            return TResult<THttpRequest>::MakeSuccess(std::move(result));
-        } else if (ret == -1) {
-            return TResult<THttpRequest>::MakeFail(-2);
+            Reader_.ChopBegin(res);
+            result = TResult<THttpRequest>::MakeSuccess(std::move(request));
+            return true;
+        } else if (res == -1) {
+            result = TResult<THttpRequest>::MakeFail(-2);
+            return true;
         } else {
-            ASSERT(ret == -2);
+            ASSERT(res == -2);
         }
-    }
+
+        return false;
+    }, deadline);
+
+    return result;
 }
 
 TResult<THttpResponse> THttpHandle::ReadResponse(TReactor::TDeadline deadline) {
-    while (true) {
-        if (Buffer_.Full()) {
-            // TODO: error codes
-            return TResult<THttpResponse>::MakeFail(-1);
-        }
+    TResult<THttpResponse> result;
+    size_t prevBufLen = 0;
 
-        size_t prevBufLen = Buffer_.Size();
-
-        TResult<size_t> res = Handle_->Read(Buffer_, deadline);
-
-        if (!res) {
-            return TResult<THttpResponse>::ForwardError(res);
-        }
-
-        if (res.Result() == 0) {
-            return TResult<THttpResponse>::MakeFail(-1);
-        }
-
-        size_t numHeaders = MAX_HEADERS;
+    TResult<size_t> res = Reader_.ReadUntil([this, &result, &prevBufLen](TMemoryRegion region) {
         int minorVersion = 0;
         int status = 0;
         const char* reason = nullptr;
         size_t reasonLen = 0;
+        size_t numHeaders = MAX_HEADERS;
         struct phr_header headers[MAX_HEADERS] = {};
 
         int ret = phr_parse_response(
-            Buffer_.DataAs<const char*>(), Buffer_.Size(),
+            region.DataAs<const char*>(), region.Size(),
             &minorVersion,
             &status,
             &reason, &reasonLen,
@@ -103,26 +83,34 @@ TResult<THttpResponse> THttpHandle::ReadResponse(TReactor::TDeadline deadline) {
             prevBufLen
         );
 
+        prevBufLen = region.Size();
+
         if (ret > 0) {
-            THttpResponse result;
-            result.Status = status;
-            result.Reason = std::string(reason, reasonLen);
-            result.MinorVersion = minorVersion;
-            result.Headers.reserve(numHeaders);
+            THttpResponse response;
+            response.Status = status;
+            response.Reason = std::string(reason, reasonLen);
+            response.MinorVersion = minorVersion;
+            response.Headers.reserve(numHeaders);
             for (size_t i = 0; i < numHeaders; i++) {
-                result.Headers.emplace(
+                response.Headers.emplace(
                     std::string(headers[i].name, headers[i].name_len),
                     std::string(headers[i].value, headers[i].value_len)
                 );
             }
-            Buffer_.ChopBegin(ret);
-            return TResult<THttpResponse>::MakeSuccess(std::move(result));
+            Reader_.ChopBegin(ret);
+            result = TResult<THttpResponse>::MakeSuccess(std::move(response));
+            return true;
         } else if (ret == -1) {
-            return TResult<THttpResponse>::MakeFail(-2);
+            result = TResult<THttpResponse>::MakeFail(-2);
+            return true;
         } else {
             ASSERT(ret == -2);
         }
-    }
+
+        return false;
+    }, deadline);
+
+    return result;
 }
 
 static std::string MergeHeaders(const THeaders& headers) {
@@ -182,33 +170,6 @@ TResult<size_t> THttpHandle::WriteResponse(const THttpResponse& response, TReact
     return Handle_->WriteAll(chain);
 }
 
-TResult<size_t> THttpHandle::TransferAll(THttpHandle& other, size_t size, TReactor::TDeadline deadline) {
-    TMemoryRegion region = Buffer_.CurrentMemoryRegion();
-
-    TResult<size_t> res = other.Handle_->WriteAll(region, deadline);
-    if (!res) {
-        return res;
-    }
-
-    size_t transfered = res.Result();
-
-    if (transfered == size) {
-        return res;
-    }
-
-    Buffer_.Reset();
-    res = Handle_->TransferAll(*other.Handle_, Buffer_, size - transfered, deadline);
-
-    if (!res) {
-        return TResult<size_t>::ForwardError(res);
-    }
-
-    transfered += res.Result();
-
-    ASSERT(transfered == size);
-    return TResult<size_t>::MakeSuccess(transfered);
-};
-
 TResult<size_t> THttpHandle::TransferBody(THttpHandle& other, const THttpMessage& message, TReactor::TDeadline deadline) {
     auto it = message.Headers.find("Content-Length");
 
@@ -216,8 +177,21 @@ TResult<size_t> THttpHandle::TransferBody(THttpHandle& other, const THttpMessage
         std::stringstream ss(it->second);
         size_t size = 0;
         ss >> size;
-        return TransferAll(other, size, deadline);
+        return Reader_.TransferExactly(*other.Handle_, size, deadline);
     }
 
     return TResult<size_t>::MakeSuccess(0);
+}
+
+TResult<TMemoryRegion> THttpHandle::ReadBody(const THttpMessage& message, TReactor::TDeadline deadline) {
+    auto it = message.Headers.find("Content-Length");
+
+    if (it != message.Headers.end()) {
+        std::stringstream ss(it->second);
+        size_t size = 0;
+        ss >> size;
+        return Reader_.ReadExactly(size, deadline);
+    }
+
+    return TResult<TMemoryRegion>::MakeSuccess(TMemoryRegion(nullptr, 0));
 }

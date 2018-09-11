@@ -198,7 +198,7 @@ public:
         std::vector<TCoroutine*> Queue_;
     };
 
-    TReactor(std::shared_ptr<spdlog::logger> logger, size_t stackSize);
+    TReactor(std::shared_ptr<spdlog::logger> logger, size_t stackSize = 4096 * 10);
 
     /*
      * Start a new coroutine. On exit, coroutine will be destroyed.

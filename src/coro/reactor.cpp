@@ -114,6 +114,8 @@ void TReactor::Run() {
 
     /* finish the last one */
     FinishedCoroutine_ = nullptr;
+    CurrentCoro = nullptr;
+    CurrentReactor = nullptr;
 }
 
 void TReactor::SwitchCoroutine(bool exitOld) {

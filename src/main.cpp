@@ -39,7 +39,7 @@ int main(int argc, char** argv) {
 
     serviceLogger->info("running Portcullis (v{}, git@{}, {})", PORTCULLIS_VERSION, PORTCULLIS_GIT_COMMIT, PORTCULLIS_BUILD_TYPE);
 
-    TReactor reactor(reactorLogger, 4096 * 16);
+    TReactor reactor(reactorLogger);
 
     std::string configPath = argv[1];
 

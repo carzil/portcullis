@@ -99,7 +99,7 @@ TResult<size_t> THandle::WriteAll(TMemoryRegionChain& chain, TReactor::TDeadline
     return TResult<size_t>::MakeSuccess(written);
 }
 
-TResult<size_t> THandle::TransferAll(THandle& to, TSocketBuffer& buffer, size_t bytesCount, TReactor::TDeadline deadline) {
+TResult<size_t> THandle::TransferExactly(THandle& to, TSocketBuffer& buffer, size_t bytesCount, TReactor::TDeadline deadline) {
     ASSERT(buffer.Empty());
 
     size_t transfered = 0;

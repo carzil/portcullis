@@ -55,7 +55,7 @@ TEST(ReactorCoreTest, AwaitCancelsAwaitedCoroutine) {
     TReactor reactor(spdlog::get("reactor"));
 
     TCoroutine* a = reactor.StartAwaitableCoroutine([]() {
-        while (!Reactor()->Current()->Canceled) {
+        while (!Reactor()->Current()->Canceled()) {
             Reactor()->Yield();
         }
     });
@@ -115,13 +115,13 @@ TEST(ReactorCoreTest, AwaitAllCancelsAwaitedCoroutines) {
     TReactor reactor(spdlog::get("reactor"));
 
     TCoroutine* a = reactor.StartAwaitableCoroutine([]() {
-        while (!Reactor()->Current()->Canceled) {
+        while (!Reactor()->Current()->Canceled()) {
             Reactor()->Yield();
         }
     });
 
     TCoroutine* b = reactor.StartAwaitableCoroutine([]() {
-        while (!Reactor()->Current()->Canceled) {
+        while (!Reactor()->Current()->Canceled()) {
             Reactor()->Yield();
         }
     });
@@ -193,7 +193,7 @@ TEST(ReactorCoreTest, MultipleCancel) {
     TReactor reactor(spdlog::get("reactor"));
 
     TCoroutine* a = reactor.StartAwaitableCoroutine([]() {
-        while (!Reactor()->Current()->Canceled) {
+        while (!Reactor()->Current()->Canceled()) {
             Reactor()->Yield();
         }
     });

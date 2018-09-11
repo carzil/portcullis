@@ -72,10 +72,10 @@ public:
     TResult<size_t> WriteAll(TMemoryRegion region, TReactor::TDeadline deadline = TReactor::TDeadline::max());
 
     /*
-     * Transfers bytes to other handle `to` through empty buffer `buffer`.
+     * Transfers exactly `size` bytes to other handle `to` through empty buffer `buffer`.
      * @return how many bytes were transfered.
      */
-    TResult<size_t> TransferAll(THandle& to, TSocketBuffer& buffer, size_t size, TReactor::TDeadline deadline = TReactor::TDeadline::max());
+    TResult<size_t> TransferExactly(THandle& to, TSocketBuffer& buffer, size_t size, TReactor::TDeadline deadline = TReactor::TDeadline::max());
 
     virtual void Close();
 

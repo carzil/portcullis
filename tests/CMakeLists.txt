@@ -15,3 +15,4 @@ endfunction()
 
 portcullis_test(NAME reactor-core-test SOURCES test_reactor_core.cpp)
 portcullis_test(NAME reactor-io-test SOURCES test_reactor_io.cpp)
+portcullis_test(NAME http-handle-test SOURCES test_http_handle.cpp)

@@ -2,7 +2,6 @@
 #include <sys/mman.h>
 
 TCoroStack::TCoroStack(size_t stackSize) {
-    /* TODO: red zones */
     Start_ = mmap(nullptr, stackSize + 2 * 4096, PROT_NONE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     if (Start_ == MAP_FAILED) {
         ThrowErrno("mmap failed");
