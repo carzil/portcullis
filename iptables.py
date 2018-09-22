@@ -5,24 +5,49 @@ import subprocess
 import sys
 
 
-def modify_rule(is_ipv6, is_del, protocol, backend_host, backend_port, port, name):
-    prog = '/sbin/ip6tables' if is_ipv6 else '/sbin/iptables'
-    action_flag = '-D' if is_del else '-A'
-    cmd = [prog, '-t', 'nat', action_flag, 'PREROUTING', '-p', protocol,
-        '--dport', str(port), '-j', 'DNAT', '--to-destination', '{backend_host}:{backend_port}'
-        '-m', 'comment', '--comment', 'Portcullis port forward for service {name}'
+class Config(dict):
+    def __getattr__(self, key):
+        return self[key]
+
+
+def parse_config(fname):
+    config_str = open(fname).read()
+    config = Config()
+    exec(config_str, config)
+    return config
+
+
+def prepare_args(action, config, ipv6):
+    if action == 'add':
+        action_flag = '-A'
+    elif action == 'del':
+        action_flag = '-D'
+
+    host = config.backend_ipv6host if ipv6 else config.backend_host
+
+    return [
+        '-t', 'nat',
+        action_flag, 'PREROUTING',
+        '-p', config.protocol,
+        '--dport', str(config.port), '-j', 'DNAT',
+        '--to-destination', f'{host}:{config.backend_port}',
+        '-m', 'comment', '--comment', f'portcullis_{config.name}',
     ]
 
-    if is_del:
+
+def exec_cmd(args, ipv6):
+    prog = '/sbin/ip6tables' if ipv6 else '/sbin/iptables'
+    cmd = [prog] + args
+    if '-D' in cmd:
         while subprocess.call(cmd) == 0:
             pass
     else:
-        subprocess.check_call(cmd)
+        subprocess.call(cmd)
 
 
 def main():
     if len(sys.argv) < 3:
-        print('Usage: {} add/del config.json'.format(sys.argv[0]))
+        print('Usage: {} add/del config.py'.format(sys.argv[0]))
         return
 
     action = sys.argv[1]
@@ -33,24 +58,15 @@ def main():
     if os.getuid() != 0:
         raise RuntimeError('You must be root to change IPTables')
 
-    config_file = sys.argv[2]
-    config_str = open(config_file).read()
-    config = {}
-    exec(config_str, config)
+    config = parse_config(sys.argv[2])
 
-    backend_port = config['backend_port']
-    name = config['name']
-    port = config['port']
-    protocol = config['protocol']
+    if not config.ipv6_only:  # IPv4
+        args = prepare_args(action, config, ipv6=False)
+        exec_cmd(args=args, ipv6=False)
 
-    if protocol not in ('tcp', 'udp'):
-        raise ValueError('Unknown protocol')  
-
-    if 'backend_host' in config:
-        modify_rule(False, action == 'del', protocol, config['backend_host'], backend_port, port, name)
-
-    if 'backend_ipv6host' in config:
-        modify_rule(True, action == 'del', protocol, config['backend_ipv6host'], backend_port, port, name)
+    if config.allow_ipv6:
+        args = prepare_args(action, config, ipv6=True)
+        exec_cmd(args=args, ipv6=True)
 
 
 if __name__ == '__main__':
