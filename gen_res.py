@@ -7,6 +7,7 @@ key = sys.argv[1]
 res = sys.argv[2]
 output = sys.argv[3]
 
+
 def main():
     with open(res, "rb") as f:
         bs = f.read()
@@ -18,6 +19,10 @@ def main():
         print(*map(hex, bs), sep=", ", file=f)
         print("};", file=f)
         print(file=f)
-        print("static TResourceRegisterer registerer(\"{}\", reinterpret_cast<const char*>(&data), {});".format(key, len(bs)), file=f)
+        print(
+            "static TResourceRegisterer registerer(\"{}\", "
+            "reinterpret_cast<const char*>(&data), {});".format(key, len(bs)), file=f)
 
-main()
+
+if __name__ == '__main__':
+    main()
