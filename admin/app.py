@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-import operator
-
 import attr
 from flask import Flask, request, send_file, jsonify
 
@@ -25,10 +23,12 @@ def serve_static():
 
 def patch_service(name, data):
     if name in services.all:
+        print('Patching', name, data)
         services.all[name].config = data['config']
         services.all[name].handler = data['handler']
         services.all[name].reload()
     else:
+        print('Creating', name, data)
         serv = services.Service(name, data['config'], data['handler'])
         services.all[name] = serv
         serv.start()
@@ -52,6 +52,7 @@ def service_action(name):
     if request.method == 'GET':
         return jsonify(attr.asdict(services.all[name]))
     elif request.method == 'DELETE':
+        print('Removing', name)
         services.all[name].stop()
         services.all[name].delete()
         del services.all[name]
@@ -70,8 +71,10 @@ def service_set_running(name):
     assert name in services.all
     is_running = request.get_json()['running']
     if is_running:
+        print('Starting', name)
         services.all[name].start()
     else:
+        print('Stopping', name)
         services.all[name].stop()
     return 'ok'
 
