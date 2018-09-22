@@ -3,11 +3,11 @@
     <b-row class="fullbleed">
       <b-col cols="6">
         Config
-        <AceEditor v-model="state.servicesMap[name].config" lang="python" theme="solarized_light"></AceEditor>
+        <AceEditor v-model="state.services[name].config" lang="python" theme="solarized_light"></AceEditor>
       </b-col>
       <b-col cols="6">
         Handler
-        <AceEditor v-model="state.servicesMap[name].handler" lang="python" theme="solarized_light"></AceEditor>
+        <AceEditor v-model="state.services[name].handler" lang="python" theme="solarized_light"></AceEditor>
       </b-col>
     </b-row>
   </div>
@@ -48,7 +48,7 @@
    },
    methods: {
      getServiceInfo() {
-       bus.$emit('load-service', this.name)
+       bus.$emit('reload-service', this.name)
      }
    },
    components: { AceEditor }

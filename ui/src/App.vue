@@ -3,7 +3,7 @@
     <div v-if="loading" id="loader">
       Loading...
     </div>
-    <b-navbar toggleable="md" type="dark" variant="info">
+    <b-navbar toggleable="md" type="light" variant="warning">
       <b-navbar-toggle target="nav_collapse"></b-navbar-toggle>
 
       <b-navbar-brand href="#">Portcullis</b-navbar-brand>
@@ -12,23 +12,22 @@
           <b-nav-item href="#" v-for="s in services" :key="s.name" :to="s.name">
             {{ s.name }} <b-badge pill :variant="s.proxying ? 'success' : 'danger'">&nbsp;</b-badge>
           </b-nav-item>
-        </b-navbar-nav>
-
-        <b-navbar-nav class="ml-auto">
-          <div v-if="serviceName in state.servicesMap">
-            <b-button size="sm" class="mr-1" @click="saveService" variant="success">
-              Save
+          <div class="mt-1 ml-3">
+            <b-button size="sm" class="mr-1" v-b-modal.new-service>
+              Add new service
             </b-button>
-            <b-button size="sm" class="mr-1" @click="toggleProxying">
-              {{ selectedService.proxying ? 'Disable' : 'Enable' }}
-            </b-button>
-            <b-button size="sm" class="mr-1" @click="deleteService" variant="danger">
-              Delete
-            </b-button>
+            <template v-if="serviceName in state.services">
+              <b-button size="sm" class="mr-1" @click="saveService" variant="success">
+                Save
+              </b-button>
+              <b-button size="sm" class="mr-1" @click="toggleProxying">
+                {{ selectedService.proxying ? 'Disable' : 'Enable' }}
+              </b-button>
+              <b-button size="sm" class="mr-1" @click="deleteService" variant="danger">
+                Delete
+              </b-button>
+            </template>
           </div>
-          <b-button size="sm" class="mr-1" v-b-modal.new-service>
-            Add new
-          </b-button>
         </b-navbar-nav>
       </b-collapse>
     </b-navbar>
@@ -98,16 +97,16 @@
        return this.$route.params.service
      },
      selectedService () {
-       return this.state.servicesMap[this.serviceName]
+       return this.state.services[this.serviceName]
      }
    },
    mounted () {
-     bus.$on('loaded-services', () => {
-       if (!this.serviceName in state.servicesMap) {
+     bus.$on('reload-all-done', () => {
+       if (!this.serviceName in state.services) {
          this.$router.push('/')
        }
      })
-     bus.$emit('load-services')
+     bus.$emit('reload-all')
    },
    methods: {
      newService () {
@@ -145,15 +144,15 @@
 
        if (this.forms.tabIndex == 0) {
          let services = this.forms.services.match(/[^\r\n]+/g)
-         let res = []
+         let res = {}
          for (let s of services) {
            let [name, port] = s.split(':')
-           res.push(getServiceObj(name, port))
+           res[name] = getServiceObj(name, port)
          }
-         bus.$emit('update-services', res)
+         bus.$emit('patch-all', res)
        } else if (this.forms.tabIndex == 1) {
-         addPost(this.forms.name, this.forms.port)
-         bus.$emit('update-service', getServiceObj(name, port))
+         let [name, port] = [this.forms.name, this.forms.port]
+         bus.$emit('patch-service', getServiceObj(name, port))
        }
      },
      resetForms () {
@@ -163,17 +162,14 @@
        /* this.forms.backendIp = '' */
      },
      saveService () {
-       bus.$emit('update-service', {
-         name: this.serviceName,
-         config: this.config,
-         handler: this.handler
-       })
+       bus.$emit('patch-service', this.serviceName)
      },
      toggleProxying () {
-       bus.$emit('update-service', {
-         name: this.serviceName,
-         proxying: !this.state.servicesMap[this.serviceName].proxying
-       })
+       bus.$emit(
+         'startstop-service',
+         this.serviceName,
+         !this.state.services[this.serviceName].proxying,
+       )
      },
      deleteService () {
        if (confirm(`Are you sure you want to delete service ${this.serviceName}?!!1`)) {

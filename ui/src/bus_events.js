@@ -4,48 +4,63 @@ import { state, bus } from './globs.js'
 window['_state'] = state
 window['_bus'] = bus
 
-bus.$on('load-services', () => {
+bus.$on('reload-service', (name) => {
+  state.tasks++
+  axios.get('/api/service/' + name)
+    .then((response) => {
+      state.services[name] = response.data
+      state.tasks--
+    })
+    .catch(function (error) {
+      console.log('Could not GET service:', error)
+      window.location.hash = '#/'
+      state.tasks--
+    })
+
+})
+bus.$on('reload-all', () => {
   state.tasks++
   axios.get('/api/services')
     .then((response) => {
       state.services = response.data
+      bus.$emit('reload-all-done')
       state.tasks--
-      bus.$emit('loaded-services')
     })
 })
-bus.$on('update-service', (service) => {
+
+bus.$on('patch-service', (name) => {
   state.tasks++
-  axios.post('/api/services/' + service.name, service)
+  axios.post('/api/service/' + name + '/config', {
+    config: state.services[name].config,
+    handler: state.services[name].handler,
+  })
     .then((response) => {
+      bus.$emit('reload-all')
       state.tasks--
     })
 })
-bus.$on('update-services', (services) => {
+bus.$on('startstop-service', (name, running) => {
   state.tasks++
-  let promises = []
-  for (let service of services) {
-    promises.push(axios.post('/api/services/' + service.name, service))
-  }
-  axios.all(promises)
-    .then(axios.spread((acct, perms) => {
+  axios.post('/api/service/' + name + '/running', {running: running})
+    .then((response) => {
+      bus.$emit('reload-service', name)
       state.tasks--
-      bus.$emit('load-services')
-    }))
+    })
 })
+bus.$on('patch-all', (services) => {
+  state.tasks++
+  promises.push(axios.post('/api/services', services))
+    .then((response) => {
+      bus.$emit('reload-all')
+      state.tasks--
+    })
+})
+
 bus.$on('delete-service', (name) => {
   state.tasks++
   axios.delete('/api/services/' + name)
     .then((response) => {
+      bus.$emit('reload-all')
       state.tasks--
-      bus.$emit('load-services')
-    })
-})
-bus.$on('load-service', (name) => {
-  axios.get('/api/services/' + this.name)
-    .then((response) => {
-      this.config = response.data.config
-      this.handler = response.data.handler
-      this.proxying = response.data.proxying
-      this.$emit('loaded')
     })
 })

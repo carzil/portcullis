@@ -1,11 +1,5 @@
 var state = {
-  services: [],
-  get servicesMap () {
-    let res = {}
-    for (let s of this.services)
-      res[s.name] = s
-    return res
-  },
+  services: {},
 
   tasks: 0,
   get loading () {
