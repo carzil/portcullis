@@ -12,18 +12,18 @@
           <b-nav-item href="#" v-for="s in services" :key="s.name" :to="s.name">
             {{ s.name }} <b-badge pill :variant="s.proxying ? 'success' : 'danger'">&nbsp;</b-badge>
           </b-nav-item>
-          <div class="mt-1 ml-3">
-            <b-button size="sm" class="mr-1" v-b-modal.new-service>
-              Add new service
+          <div class="ml-3">
+            <b-button size="m" class="mr-1" v-b-modal.new-service>
+              Add new
             </b-button>
             <template v-if="serviceName in state.services">
-              <b-button size="sm" class="mr-1" @click="saveService" variant="success">
+              <b-button size="m" class="mr-1" @click="saveService" variant="success">
                 Save
               </b-button>
-              <b-button size="sm" class="mr-1" @click="toggleProxying">
-                {{ selectedService.proxying ? 'Disable' : 'Enable' }}
+              <b-button size="m" class="mr-1" @click="toggleProxying">
+                {{ selectedService.proxying ? 'Stop' : 'Start' }}
               </b-button>
-              <b-button size="sm" class="mr-1" @click="deleteService" variant="danger">
+              <b-button size="m" class="mr-1" @click="deleteService" variant="danger">
                 Delete
               </b-button>
             </template>
@@ -110,36 +110,43 @@
    },
    methods: {
      newService () {
-       let handler = `from portcullis import Splicer
-
-                      class Handler:
-                          def __init__(self, ctx, client, backend):
-                              self.ctx = ctx
-                              self.client = client
-                              self.backend = backend
-                              self.splicer = Splicer(self.ctx, self.client, self.backend, self.end)
-                              self.ctx.start_splicer(self.splicer)
-
-                          def end(self):
-                              pass
-                      `
-       handler = handler.replace(/^ {21}/gm, '')
-
-       let promises = []
-
        let getServiceObj = (name, port) => ({
          name: name,
-         config: `name = "${name}"
-                  host = "localhost"
-                  port = "${port}"
-                  backlog = 128
-                  handler_file = "$WORK_DIR/${name}.handler.py"
-                  managed = True
-                  protocol = "tcp"
-                  backend_host = "${this.forms.backendIp}"
-                  backend_port = "${port}"
-                  `.replace(/^ +/gm, ''),
-         handler: handler
+         config: `
+           host = ""
+           port = "${port}"
+           backlog = 128
+           handler_file = "$WORK_DIR/${name}.handler.py"
+           protocol = "tcp"
+           backend_ip = "${this.forms.backendIp}"
+           backend_ipv6 = ""
+           backend_port = "${port}"
+           coroutine_stack_size = 4096 * 100
+         `.replace(/^ +/gm, ''),
+         handler: `
+           from portcullis.core import TcpHandle, resolve_v4
+           from portcullis.http import HttpHandle
+
+           backend_addr = resolve_v4("tcp://${this.forms.backendIp}:${port}")
+
+           def handler(ctx, clt):
+               client = HttpHandle(clt)
+               backend = HttpHandle(TcpHandle.connect(ctx, backend_addr))
+
+               request = client.read_request()
+               backend.write_request(request)
+               client.transfer_body(backend, request)
+
+               ua = request.headers["User-Agent"]
+               if ua is not None:
+                   request.headers["User-Agent"] = "portcullis"
+
+               response = backend.read_response()
+               response.headers["Server"] = "portcullis"
+
+               client.write_response(response)
+               backend.transfer_body(client, response)
+        `.replace(/^ {10}/gm, '')
        })
 
        if (this.forms.tabIndex == 0) {

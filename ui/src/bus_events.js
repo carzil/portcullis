@@ -49,7 +49,7 @@ bus.$on('startstop-service', (name, running) => {
 })
 bus.$on('patch-all', (services) => {
   state.tasks++
-  promises.push(axios.post('/api/services', services))
+  axios.post('/api/services', services)
     .then((response) => {
       bus.$emit('reload-all')
       state.tasks--
@@ -58,7 +58,7 @@ bus.$on('patch-all', (services) => {
 
 bus.$on('delete-service', (name) => {
   state.tasks++
-  axios.delete('/api/services/' + name)
+  axios.delete('/api/service/' + name)
     .then((response) => {
       bus.$emit('reload-all')
       state.tasks--
