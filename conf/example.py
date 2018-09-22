@@ -1,12 +1,9 @@
-name = "test"
 host = ""
 port = "1339"
 backlog = 128
-handler_file = "../conf/tcp_handler.py"
+handler_file = "../conf/handler.py"
 protocol = "tcp"
-backend_host = "127.0.0.1"
-backend_ipv6host = "127.0.0.1"
+backend_ip = "127.0.0.1"
+backend_ipv6 = ""
 backend_port = "8080"
-allow_ipv6 = False
-ipv6_only = False
 coroutine_stack_size = 4096 * 100

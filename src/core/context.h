@@ -12,7 +12,6 @@
 namespace py = pybind11;
 
 struct TConfig {
-    std::string Name;
     std::string HandlerFile;
 
     std::string Host;
@@ -20,10 +19,9 @@ struct TConfig {
     size_t Backlog = 0;
 
     std::string Protocol;
-    bool AllowIpv6 = false;
-    bool Ipv6Only = false;
 
-    std::string BackendHost;
+    std::string BackendIp;
+    std::string BackendIpv6;
     std::string BackendPort;
 
     size_t CoroutineStackSize = 0;

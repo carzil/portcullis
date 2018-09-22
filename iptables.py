@@ -23,7 +23,7 @@ def prepare_args(action, config, ipv6):
     elif action == 'del':
         action_flag = '-D'
 
-    host = config.backend_ipv6host if ipv6 else config.backend_host
+    host = config.backend_ipv6 if ipv6 else config.backend_ip
 
     return [
         '-t', 'nat',
@@ -60,11 +60,11 @@ def main():
 
     config = parse_config(sys.argv[2])
 
-    if not config.ipv6_only:  # IPv4
+    if not config.backend_ip:  # IPv4
         args = prepare_args(action, config, ipv6=False)
         exec_cmd(args=args, ipv6=False)
 
-    if config.allow_ipv6:
+    if config.backend_ipv6:
         args = prepare_args(action, config, ipv6=True)
         exec_cmd(args=args, ipv6=True)
 

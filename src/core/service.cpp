@@ -39,7 +39,7 @@ std::shared_ptr<TContext> TService::ReloadContext() {
     context->Logger = Logger_;
 
     context->BackendAddr = GetAddrInfo(
-        context->Config.BackendHost,
+        context->Config.BackendIp,
         context->Config.BackendPort,
         false,
         context->Config.Protocol
@@ -69,14 +69,12 @@ void TService::Start() {
 
     EIpVersionMode ipVersion = V4_ONLY;
 
-    if (context->Config.AllowIpv6) {
-        if (context->Config.Ipv6Only) {
-            ipVersion = V6_ONLY;
-        } else {
+    if (context->Config.BackendIpv6.length() > 0) {
+        if (context->Config.BackendIp.length() > 0) {
             ipVersion = V4_AND_V6;
+        } else {
+            ipVersion = V6_ONLY;
         }
-    } else if (context->Config.Ipv6Only) {
-        throw TException() << "ipv6_only set but IPv6 is not allowed";
     }
 
     std::vector<TSocketAddress> listeningAddresses = GetAddrInfo(context->Config.Host, context->Config.Port, true, "tcp", ipVersion);
