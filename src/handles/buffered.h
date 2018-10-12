@@ -3,6 +3,9 @@
 #include "common.h"
 
 #include <util/generic.h>
+#include <regexp/database.h>
+#include <regexp/matchers.h>
+
 
 template <typename UnderlyingPtr>
 class TBufferedReader : public TMoveOnly {
@@ -110,6 +113,42 @@ public:
         return TResult<size_t>::MakeSuccess(transfered);
     }
 
+    template <typename Other>
+    TResult<size_t> TransferUntil(Other& to, size_t maxSize, TStreamRegexpMatcher& matcher, TReactor::TDeadline deadline = TReactor::TDeadline::max()) {
+        if (!Buffer_.Empty()) {
+            if (matcher.Scan(Buffer_.CurrentMemoryRegion().FitSize(maxSize))) {
+                
+            }
+        }
+
+        while (transfered < maxSize) {
+            TResult<size_t> res = Handle_->Read(Buffer_, bytesCount - transfered, deadline);
+
+            if (!res) {
+                return res;
+            }
+
+            if (res.Result() == 0) {
+                break;
+            }
+
+            // TODO: check for bug
+            TMemoryRegion region = Buffer_.CurrentMemoryRegion().FitSize(maxSize - transfered);
+            if (matcher.Scan(region)) {
+                break;
+            }
+
+            res = to.WriteAll(region);
+            if (!res) {
+                return res;
+            }
+            Buffer_.Reset();
+            transfered += res.Result();
+        }
+
+        return TResult<size_t>::MakeSuccess();
+    }
+
     void ChopBegin(size_t size) {
         Buffer_.ChopBegin(size);
     }
@@ -126,7 +165,12 @@ public:
         return Buffer_.Full();
     }
 
+    void Finish() {
+        Finished_ = true;               
+    }
+
 private:
     UnderlyingPtr Handle_;
     TSocketBuffer Buffer_;
+    bool Finished_ = false;
 };

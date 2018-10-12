@@ -20,6 +20,11 @@ public:
         , Size_(s.size())
     {}
 
+    TMemoryRegion(std::string_view s)
+        : Data_(const_cast<char*>(s.data()))
+        , Size_(s.size())
+    {}
+
     const void* Data() const {
         return Data_;
     }

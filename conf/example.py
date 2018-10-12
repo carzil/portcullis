@@ -7,6 +7,6 @@ protocol = "tcp"
 backend_host = "127.0.0.1"
 backend_ipv6host = "127.0.0.1"
 backend_port = "8080"
-allow_ipv6 = False
+allow_ipv6 = True
 ipv6_only = False
 coroutine_stack_size = 4096 * 100

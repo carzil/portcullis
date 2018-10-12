@@ -9,6 +9,7 @@
 #include <coro/coro.h>
 #include <coro/reactor.h>
 #include <handles/tcp.h>
+#include <regexp/matchers.h>
 
 #include <signal.h>
 #include <unistd.h>
@@ -31,6 +32,16 @@ int main(int argc, char** argv) {
         serviceLogger->critical("usage: portcullis CONFIG_FILE");
         return 1;
     }
+
+    TStreamRegexpDatabase db({
+        { "abc[def]{3}", HS_FLAG_CASELESS },
+        { "abcdef", 0 }
+    });
+
+    TStreamRegexpMatcher matcher(db, [](unsigned int id, size_t from, size_t to) {
+        std::cerr << id << " (" << from << ", " << to << ")" << std::endl;
+        return false;
+    });
 
     ::sigset_t sigs;
     ::sigemptyset(&sigs);

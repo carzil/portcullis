@@ -16,3 +16,6 @@
 [submodule "tests/gtest"]
 	path = tests/gtest
 	url = https://github.com/google/googletest.git
+[submodule "contrib/hyperscan"]
+	path = contrib/hyperscan
+	url = https://github.com/intel/hyperscan.git
