@@ -1,5 +1,5 @@
 from portcullis.core import TcpHandle, resolve_v4
-from portcullis.http import HttpHandle
+from portcullis.http import *
 
 
 backend_addr = resolve_v4("tcp://localhost:8080")

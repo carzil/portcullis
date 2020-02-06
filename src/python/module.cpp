@@ -1,5 +1,6 @@
 #include "module.h"
 
+#include <pybind11/functional.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
 
@@ -8,6 +9,9 @@
 
 #include <handles/tcp.h>
 #include <handles/http.h>
+
+#include <regexp/database.h>
+#include <regexp/matchers.h>
 
 #include <util/network/address.h>
 #include <util/python.h>
@@ -70,7 +74,7 @@ void InitHttpModule(py::module& http) {
         .def("close", &THttpHandleWrapper::Close);
 }
 
-void InitPortcullisModule(py::module& m) {
+void BindMap(py::module& m) {
     using TMap = std::unordered_map<std::string, std::string>;
     py::class_<TMap>(m, "UnorderedMapStringString")
         .def(py::init<>())
@@ -112,6 +116,38 @@ void InitPortcullisModule(py::module& m) {
                }
                m.erase(it);
         });
+}
+
+void InitReModule(py::module& m) {
+    m.attr("CASELESS") = py::int_(HS_FLAG_CASELESS);
+    m.attr("DOTALL") = py::int_(HS_FLAG_DOTALL);
+    m.attr("MULTILINE") = py::int_(HS_FLAG_MULTILINE);
+    m.attr("SINGLEMATCH") = py::int_(HS_FLAG_SINGLEMATCH);
+    m.attr("ALLOWEMPTY") = py::int_(HS_FLAG_ALLOWEMPTY);
+    m.attr("UTF8") = py::int_(HS_FLAG_UTF8);
+    m.attr("UCP") = py::int_(HS_FLAG_UCP);
+    m.attr("PREFILTER") = py::int_(HS_FLAG_PREFILTER);
+    m.attr("SOM_LEFTMOST") = py::int_(HS_FLAG_SOM_LEFTMOST);
+
+    m.attr("MODE_SOM_HORIZON_SMALL") = py::int_(HS_MODE_SOM_HORIZON_SMALL);
+    m.attr("MODE_SOM_HORIZON_MEDIUM") = py::int_(HS_MODE_SOM_HORIZON_MEDIUM);
+    m.attr("MODE_SOM_HORIZON_LARGE") = py::int_(HS_MODE_SOM_HORIZON_LARGE);
+
+    py::class_<TRegexpDef>(m, "RegexpDef")
+        .def(py::init<std::string, unsigned int>());
+
+    py::class_<TStreamRegexpDatabase>(m, "StreamRegexpDatabase")
+        .def(py::init<std::vector<TRegexpDef>, unsigned int>(), py::arg("regexps"), py::arg("mode") = 0);
+
+    py::class_<TStreamRegexpMatcher>(m, "StreamRegexpMatcher")
+        .def(py::init<TStreamRegexpDatabase, TStreamRegexpMatcher::TMatchCallback>())
+        .def("scan", [](TStreamRegexpMatcher& matcher, std::string_view chunk) {
+            matcher.Scan(chunk);
+        });
+}
+
+void InitPortcullisModule(py::module& m) {
+    BindMap(m);
 
     py::module core = m.def_submodule("core");
     InitCoreModule(core);
@@ -119,7 +155,13 @@ void InitPortcullisModule(py::module& m) {
     py::module http = m.def_submodule("http");
     InitHttpModule(http);
 
+    py::module _re = m.def_submodule("_re");
+    InitReModule(_re);
+
     py::module helpers = m.def_submodule("helpers");
     LoadPortcullisSubModule(m, "helpers", "helpers.py");
+
+    py::module re = m.def_submodule("re");
+    LoadPortcullisSubModule(m, "re", "re.py");
 }
 

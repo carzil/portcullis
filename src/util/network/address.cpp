@@ -75,7 +75,6 @@ std::string TSocketAddress::Host() const {
 
 std::vector<TSocketAddress> GetAddrInfo(const std::string& host, const std::string& service, bool listener, const std::string& protocol, EIpVersionMode ipVersion) {
     int ai_flags = listener ? (AI_PASSIVE | AI_ADDRCONFIG) : 0;
-    int ai_protocol = 0;
     int ai_family = 0;
     int ai_socktype = 0;
 
@@ -101,12 +100,11 @@ std::vector<TSocketAddress> GetAddrInfo(const std::string& host, const std::stri
         throw TException() << "unknown protocol '" << protocol << "'";
     }
 
-    struct addrinfo* result;
     struct addrinfo hints;
-
+    memset(&hints, '\0', sizeof(hints));
     hints.ai_flags = ai_flags;
     hints.ai_family = ai_family;
-    hints.ai_protocol = ai_protocol;
+    hints.ai_protocol = 0;
     hints.ai_socktype = ai_socktype;
 
     const char* hostPtr = nullptr;
@@ -114,6 +112,7 @@ std::vector<TSocketAddress> GetAddrInfo(const std::string& host, const std::stri
         hostPtr = host.c_str();
     }
 
+    struct addrinfo* result;
     int res = getaddrinfo(hostPtr, service.c_str(), &hints, &result);
     if (res != 0) {
         throw TException() << "getaddrinfo failed: " << gai_strerror(res);

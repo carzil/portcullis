@@ -18,6 +18,19 @@ set(PORTCULLIS_TESTING OFF CACHE BOOL "Build portcullis tests")
 add_subdirectory(contrib/pybind11)
 add_subdirectory(contrib/spdlog)
 
+ExternalProject_Add(hyperscan
+    GIT_REPOSITORY    https://github.com/intel/hyperscan.git
+    GIT_TAG           v5.0.0
+    CMAKE_ARGS        -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+    UPDATE_COMMAND    ""
+    CONFIGURE_COMMAND ""
+)
+
+ExternalProject_Get_Property(hyperscan INSTALL_DIR)
+add_library(libhyperscan STATIC IMPORTED)
+set_target_properties(libhyperscan PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/lib64/libhs.a)
+add_dependencies(libhyperscan hyperscan)
+
 find_package(Threads)
 
 set(Python_ADDITIONAL_VERSIONS 3.6)
@@ -28,6 +41,7 @@ include_directories(
     ${CMAKE_CURRENT_BINARY_DIR}/src
     src/
     contrib/
+    ${INSTALL_DIR}/include
 )
 
 execute_process(
@@ -44,6 +58,7 @@ configure_file(
 
 set(RESOURCES
     helpers.py
+    re.py
 )
 
 foreach(res ${RESOURCES})
@@ -74,6 +89,8 @@ set(CORE_SOURCES
     src/handles/tcp.cpp
     src/handles/http.cpp
 
+    src/regexp/matchers.cpp
+
     src/python/wrappers.cpp
 
     src/util/generic.cpp
@@ -85,7 +102,7 @@ set(CORE_SOURCES
 add_library(picohttpparser STATIC contrib/picohttpparser/picohttpparser.c)
 
 add_library(portcullis-core STATIC ${CORE_SOURCES})
-target_link_libraries(portcullis-core PRIVATE ${PYTHON_LIBRARIES} pybind11::embed spdlog systemd ${CMAKE_THREAD_LIBS_INIT} picohttpparser)
+target_link_libraries(portcullis-core PRIVATE ${PYTHON_LIBRARIES} pybind11::embed spdlog systemd ${CMAKE_THREAD_LIBS_INIT} picohttpparser libhyperscan)
 
 set_source_files_properties(${GENERATED_RESOURCES} PROPERTIES GENERATED TRUE)
 add_executable(portcullis ${EXECUTABLE_SOURCES} ${GENERATED_RESOURCES})
